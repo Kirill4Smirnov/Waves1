@@ -1,19 +1,25 @@
 ﻿#include <chrono>
 #include <thread>
-
 #include <SFML/Graphics.hpp>
+
+#ifndef min
+#define max(a,b) (((a) > (b)) ? (a) : (b))
+#define min(a,b) (((a) < (b)) ? (a) : (b))
+#endif // min
+
 
 using namespace sf;
 using std::this_thread::sleep_for;
 
-const int Width = 100;
-const int Height = 100;
+const int Width = 200;
+const int Height = 200;
+
+const int Screen_Scale = 3;
+const int Screen_Width = Width * Screen_Scale;
+const int Screen_Height = Height * Screen_Scale;
 
 
-const int Screen_Scale = 1;
-
-//r = (self.c * dt/np.gradient(self.x))**2
-const double r = 0.01;
+const double r = 0.1;//accuracy of simulation
 const double fric_coef = 0.000;
 
 class Point {
@@ -43,17 +49,26 @@ public:
 };
 
 class Field {
-public:
-	Point points[Width][Height];
+private:
 
-	Field() {};
+public:
+	Point *points;
+	//Point points[Width][Height];
+	//int* data;
+
+	Field() {
+		//data = new int[4];
+		points = new Point[Width * Height];
+	}
 	~Field() {};
 
 	void ComputeFrame() {
 
 		for (int i = 1; i < Width - 1; i++) {
 			for (int j = 1; j < Height - 1; j++) {
-				points[i][j].Compute(points[i-1][j-1], points[i + 1][j - 1], points[i - 1][j + 1], points[i + 1][j + 1]);
+				//points[i][j].Compute(points[i-1][j-1], points[i + 1][j - 1], points[i - 1][j + 1], points[i + 1][j + 1]);
+				points[i * Width + j].Compute(points[(i -1 ) * Width + (j - 1)], points[(i + 1) * Width + (j - 1)], points[(i - 1) * Width + (j + 1)], points[(i + 1) * Width + (j + 1)]);
+				
 			}
 		}
 		//points[0].Compute(points[1]);
@@ -61,7 +76,8 @@ public:
 
 		for (int i = 1; i < Width - 1; i++) {
 			for (int j = 1; j < Height - 1; j++) {
-				points[i][j].ApplyChanging();
+				//points[i][j].ApplyChanging();
+				points[i * Width + j].ApplyChanging();
 			}
 		}
 	}
@@ -73,23 +89,24 @@ int main()
 
 	for (int x = 0; x < Width; x++) {
 		for (int y = 0; y < Height; y++) {
-			field.points[x][y].y = 0.0;
-			field.points[x][y].y_prev = 0.0;
+			field.points[x * Width + y].y = 0.0;
+			field.points[x * Width + y].y_prev = 0.0;
 		}
 	}
 
 	for (int x = 20; x < 30; x++) {
 		for (int y = 50; y < 70; y++) {
-			field.points[x][y].y = 1.0;
-			field.points[x][y].y_prev = 1.0;
+			field.points[x * Width + y].y = 10.0;
+			field.points[x * Width + y].y_prev = 11.0;
 		}
 	}
 
-	RenderWindow window(VideoMode(Width * Screen_Scale, Height * Screen_Scale), "Wave simulation");
+	RenderWindow window(VideoMode(Screen_Width, Screen_Height), "Wave simulation");
 	window.setFramerateLimit(60);
 
 
-	Uint8* pixels = new Uint8[4 * Width * Height * Screen_Scale * Screen_Scale];
+	Uint8* pixels = new Uint8[4 * Screen_Width * Screen_Width];
+
 
 	while (window.isOpen())
 	{
@@ -103,24 +120,52 @@ int main()
 		//coloring of the screen
 		for (int x = 0; x < Width; x++) {
 			for (int y = 0; y < Height; y++) {
-				int color = 100;
+				int color, rcolor = 0, bcolor = 0, gcolor = 0;
+				color = field.points[x * Width + y].y * 100;
+
+				if (color > 0) {
+					if (color > 255) {
+						gcolor = color - 255;
+						color = 255;
+					}
+					rcolor = color;
+				}
+				if (color <= 0) {
+					color = -color;
+					if (color > 255) {
+						gcolor = color - 255;
+						color = 255;
+					}
+					bcolor = color;
+				}
+
 				
-				color = field.points[x][y].y * 10;
-
-				if (color > 255) color = 255;
-
-
-				pixels[(x + y * Width) * 4] = color; //r
-				pixels[(x + y * Width) * 4 + 1] = color; //g
-				pixels[(x + y * Width) * 4 + 2] = color; //b
-				pixels[(x + y * Width) * 4 + 3] = 255; //a
+				for (int i = x * Screen_Scale; i < (x + 1) * Screen_Scale; i++) {
+					for (int j = y * Screen_Scale; j < (y + 1) * Screen_Scale; j++) {
+						int xScreen = i;
+						int yScreen = j * Screen_Scale;
+						pixels[(xScreen + yScreen * Width) * 4] = rcolor; //r
+						pixels[(xScreen + yScreen * Width) * 4 + 1] = gcolor; //g
+						pixels[(xScreen + yScreen * Width ) * 4 + 2] = bcolor; //b
+						pixels[(xScreen + yScreen * Width ) * 4 + 3] = 255; //a
+					}
+				}
 				
+				//pixels[(x + y * Width) * 4] = rcolor; //r
+				//pixels[(x + y * Width) * 4 + 1] = gcolor; //g
+				//pixels[(x + y * Width) * 4 + 2] = bcolor; //b
+				//pixels[(x + y * Width) * 4 + 3] = 255; //a
+				
+				//pixels[(x * Screen_Scale + y * Screen_Scale * Screen_Width) * 4] = rcolor; //r
+				//pixels[(x * Screen_Scale + y * Screen_Scale * Screen_Width) * 4 + 1] = gcolor; //g
+				//pixels[(x * Screen_Scale + y * Screen_Scale * Screen_Width) * 4 + 2] = bcolor; //b
+				//pixels[(x * Screen_Scale + y * Screen_Scale * Screen_Width) * 4 + 3] = 255; //a
 
 			}
 		}
 
 		Image img;
-		img.create(Width, Height, pixels);
+		img.create(Screen_Width, Screen_Height, pixels);
 		Texture texture;
 		texture.loadFromImage(img);
 		Sprite sprite;
