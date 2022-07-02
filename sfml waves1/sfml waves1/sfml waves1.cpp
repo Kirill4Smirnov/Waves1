@@ -11,16 +11,16 @@
 using namespace sf;
 using std::this_thread::sleep_for;
 
-const int Width = 200;
-const int Height = 200;
+const int Width = 300;
+const int Height = 300;
 
-const int Screen_Scale = 3;
+const int Screen_Scale = 2;
 const int Screen_Width = Width * Screen_Scale;
 const int Screen_Height = Height * Screen_Scale;
 
 
 const double r = 0.1;//accuracy of simulation
-const double fric_coef = 0.000;
+const double fric_coef = 0.00;
 
 class Point {
 private:
@@ -53,14 +53,13 @@ private:
 
 public:
 	Point *points;
-	//Point points[Width][Height];
-	//int* data;
 
 	Field() {
-		//data = new int[4];
 		points = new Point[Width * Height];
 	}
-	~Field() {};
+	~Field() {
+		delete[] points;
+	};
 
 	void ComputeFrame() {
 
@@ -150,16 +149,6 @@ int main()
 						pixels[(xScreen + yScreen * Width ) * 4 + 3] = 255; //a
 					}
 				}
-				
-				//pixels[(x + y * Width) * 4] = rcolor; //r
-				//pixels[(x + y * Width) * 4 + 1] = gcolor; //g
-				//pixels[(x + y * Width) * 4 + 2] = bcolor; //b
-				//pixels[(x + y * Width) * 4 + 3] = 255; //a
-				
-				//pixels[(x * Screen_Scale + y * Screen_Scale * Screen_Width) * 4] = rcolor; //r
-				//pixels[(x * Screen_Scale + y * Screen_Scale * Screen_Width) * 4 + 1] = gcolor; //g
-				//pixels[(x * Screen_Scale + y * Screen_Scale * Screen_Width) * 4 + 2] = bcolor; //b
-				//pixels[(x * Screen_Scale + y * Screen_Scale * Screen_Width) * 4 + 3] = 255; //a
 
 			}
 		}
