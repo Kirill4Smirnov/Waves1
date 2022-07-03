@@ -131,42 +131,105 @@ int main()
 
 	Uint8* pixels = new Uint8[4 * Screen_Width * Screen_Width];
 
+	short brush_size = 3;
+	double value = 3.0;
+	bool cursor_enabled = true;
+
+	bool C_flag = false;
+
+	std::cout << "Use V + scroll to change value of brush, B + scroll to change size of brush, LMB to draw, LMB + W to graw new walls, RBM to delete walls\n";
 	while (window.isOpen())
 	{
 		Event event;
+		
 		while (window.pollEvent(event))
 		{
+			int x = Mouse::getPosition(window).x;
+			int y = Mouse::getPosition(window).y;
+			x = x * Width / window.getSize().x;
+			y = y * Height / window.getSize().y;
+
 			if (event.type == Event::Closed)
 				window.close();
-			//if (event.type == Event::MouseMoved) {
-			//	std::cout << "x: " << Mouse::getPosition(window).x << "\ty: " << Mouse::getPosition(window).y << '\n';
-			//}
 
 			if (Mouse::isButtonPressed(Mouse::Left))
 			{
-				int x = Mouse::getPosition(window).x;
-				int y = Mouse::getPosition(window).y;
+				
 
-				x = x * Width / window.getSize().x;
-				y = y * Height / window.getSize().y;
+				if (Keyboard::isKeyPressed(Keyboard::W)) { //if W pressed, add wall
+					if ((x > brush_size && x < Width - brush_size) && (y > brush_size && y < Height - brush_size)) {
 
+						for (int i = x - brush_size; i < x + brush_size; i++) {
+							for (int j = y - brush_size; j < y + brush_size; j++) {
+								if (!field.points[i][j].is_wall) {
+									field.points[i][j].is_wall = true;
+								}
 
-				std::cout << "Left mouse pressed\tx: " << x << "\ty: " << y << '\n';
-				if ((x > 3 && x < Width - 3) && (y > 3 && y < Height - 3)) {
-					
-					for (int i = x - 3; i < x + 3; i++) {
-						for (int j = y - 3; j < y + 3; j++) {
-							if (!field.points[i][j].is_wall) {
-								field.points[i][j] = 3.0;
 							}
-							
+						}
+
+					}
+				}
+				else {//else set y of pixels to value
+					if ((x > brush_size && x < Width - brush_size) && (y > brush_size && y < Height - brush_size)) {
+
+						for (int i = x - brush_size; i < x + brush_size; i++) {
+							for (int j = y - brush_size; j < y + brush_size; j++) {
+								if (!field.points[i][j].is_wall) {
+									field.points[i][j].y = value;
+									field.points[i][j].y_prev = value;
+								}
+
+							}
+						}
+
+					}
+				}
+				
+			}
+
+			if (Mouse::isButtonPressed(Mouse::Right)) //delete several walls
+			{
+				if ((x > brush_size && x < Width - brush_size) && (y > brush_size && y < Height - brush_size)) {
+
+					for (int i = x - brush_size; i < x + brush_size; i++) {
+						for (int j = y - brush_size; j < y + brush_size; j++) {
+								field.points[i][j].is_wall = false;
 						}
 					}
-					
+
 				}
+				
+			}
+
+			if (event.type == sf::Event::MouseWheelMoved)
+			{
+				if (Keyboard::isKeyPressed(Keyboard::B)) { 
+					brush_size += event.mouseWheel.delta;
+					if (brush_size < 1) {
+						brush_size = 1;
+					}
+				} 
+				if (Keyboard::isKeyPressed(Keyboard::V)) {
+					value += event.mouseWheel.delta * 0.1;
+
+				}
+				
+				std::cout << "\rBrush size: " << brush_size << "\tBrush value: " << value << "\tCursor enabled: " << cursor_enabled << std::flush;
+			}
+
+			if (Keyboard::isKeyPressed(Keyboard::C)) {
+				if (C_flag) {
+					C_flag = false;
+					cursor_enabled = !cursor_enabled;
+				}
+				else {
+					C_flag = true;
+				}
+				std::cout << "\rBrush size: " << brush_size << "\tBrush value: " << value << "\tCursor enabled: " << cursor_enabled << std::flush;
 			}
 		}
-
+		
 		//coloring of the screen
 		for (int x = 0; x < Width; x++) {
 			for (int y = 0; y < Height; y++) {
@@ -210,6 +273,41 @@ int main()
 			}
 		}
 
+		int xMouse = Mouse::getPosition(window).x;
+		int yMouse = Mouse::getPosition(window).y;
+		xMouse = xMouse * Width / window.getSize().x;
+		yMouse = yMouse * Height / window.getSize().y;
+
+		//brush cursor
+		if (cursor_enabled) {
+			if ((xMouse > brush_size && xMouse < Width - brush_size) && (yMouse > brush_size && yMouse < Height - brush_size)) {
+				for (int x = (xMouse - brush_size) * Screen_Scale; x < (xMouse + brush_size) * Screen_Scale; x++) {
+					pixels[(x + (yMouse + brush_size) * Width * Screen_Scale * Screen_Scale) * 4] = 127; //r
+					pixels[(x + (yMouse + brush_size) * Width * Screen_Scale * Screen_Scale) * 4 + 1] = 127; //g
+					pixels[(x + (yMouse + brush_size) * Width * Screen_Scale * Screen_Scale) * 4 + 2] = 127; //b
+					pixels[(x + (yMouse + brush_size) * Width * Screen_Scale * Screen_Scale) * 4 + 3] = 255; //a
+
+					pixels[(x + (yMouse - brush_size) * Width * Screen_Scale * Screen_Scale) * 4] = 127; //r
+					pixels[(x + (yMouse - brush_size) * Width * Screen_Scale * Screen_Scale) * 4 + 1] = 127; //g
+					pixels[(x + (yMouse - brush_size) * Width * Screen_Scale * Screen_Scale) * 4 + 2] = 127; //b
+					pixels[(x + (yMouse - brush_size) * Width * Screen_Scale * Screen_Scale) * 4 + 3] = 255; //a
+				}
+				for (int y = (yMouse - brush_size) * Screen_Scale; y < (yMouse + brush_size) * Screen_Scale; y++) {
+					pixels[((xMouse + brush_size) * Screen_Scale + y * Width * Screen_Scale) * 4] = 127; //r
+					pixels[((xMouse + brush_size) * Screen_Scale + y * Width * Screen_Scale) * 4 + 1] = 127; //g
+					pixels[((xMouse + brush_size) * Screen_Scale + y * Width * Screen_Scale) * 4 + 2] = 127; //b
+					pixels[((xMouse + brush_size) * Screen_Scale + y * Width * Screen_Scale) * 4 + 3] = 255; //a
+
+					pixels[((xMouse - brush_size) * Screen_Scale + y * Width * Screen_Scale) * 4] = 127; //r
+					pixels[((xMouse - brush_size) * Screen_Scale + y * Width * Screen_Scale) * 4 + 1] = 127; //g
+					pixels[((xMouse - brush_size) * Screen_Scale + y * Width * Screen_Scale) * 4 + 2] = 127; //b
+					pixels[((xMouse - brush_size) * Screen_Scale + y * Width * Screen_Scale) * 4 + 3] = 255; //a
+				}
+			}
+		}
+		
+		
+
 		Image img;
 		img.create(Screen_Width, Screen_Height, pixels);
 		Texture texture;
@@ -217,7 +315,6 @@ int main()
 		Sprite sprite;
 		sprite.setTexture(texture, true);
 		window.draw(sprite);
-
 		window.display();
 
 		sleep_for(std::chrono::milliseconds(10));
