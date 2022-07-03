@@ -89,16 +89,12 @@ public:
 
 			}
 		}
-		//points[0].Compute(points[1]);
-		//points[Width - 1].Compute(points[Width - 2]);
 
 		for (int i = 1; i < Width - 1; i++) {
 			for (int j = 1; j < Height - 1; j++) {
-				if (points[i * Width + j].is_wall) {
-					return;
+				if (!points[i * Width + j].is_wall) {
+					points[i * Width + j].ApplyChanging();
 				}
-				//points[i][j].ApplyChanging();
-				points[i * Width + j].ApplyChanging();
 			}
 		}
 	}
@@ -115,6 +111,11 @@ int main()
 			field.points[x * Width + y].y_prev = 11.0;
 		}
 	}*/
+
+	for (int x = 50; x < 200; x++) {
+		field.points[x * Width + 100].is_wall = true;
+		field.points[x * Width + 50].is_wall = true;
+	}
 
 	RenderWindow window(VideoMode(Screen_Width, Screen_Height), "Wave simulation");
 	window.setFramerateLimit(60);
@@ -140,12 +141,16 @@ int main()
 				x = x * Width / window.getSize().x;
 				y = y * Height / window.getSize().y;
 
+
 				std::cout << "Left mouse pressed\tx: " << x << "\ty: " << y << '\n';
-				if ((x > 3 && x < window.getSize().x - 3) && (y > 3 && y < window.getSize().y - 3)) {
+				if ((x > 3 && x < Width - 3) && (y > 3 && y < Height - 3)) {
 					
 					for (int i = x - 3; i < x + 3; i++) {
 						for (int j = y - 3; j < y + 3; j++) {
-							field.points[i * Width + j] = 3.0;
+							if (!field.points[i * Width + j].is_wall) {
+								field.points[i * Width + j] = 3.0;
+							}
+							
 						}
 					}
 					
@@ -157,24 +162,30 @@ int main()
 		for (int x = 0; x < Width; x++) {
 			for (int y = 0; y < Height; y++) {
 				int color, rcolor = 0, bcolor = 0, gcolor = 0;
-				color = field.points[x * Width + y].y * 100;
-
-				if (color > 0) {
-					if (color > 255) {
-						gcolor = color - 255;
-						color = 255;
-					}
-					rcolor = color;
+				if (field.points[x * Width + y].is_wall) {
+					rcolor = 255;
+					gcolor = 255;
+					bcolor = 255;
 				}
-				if (color <= 0) {
-					color = -color;
-					if (color > 255) {
-						gcolor = color - 255;
-						color = 255;
-					}
-					bcolor = color;
-				}
+				else {
+					color = field.points[x * Width + y].y * 100;
 
+					if (color > 0) {
+						if (color > 255) {
+							gcolor = color - 255;
+							color = 255;
+						}
+						rcolor = color;
+					}
+					if (color <= 0) {
+						color = -color;
+						if (color > 255) {
+							gcolor = color - 255;
+							color = 255;
+						}
+						bcolor = color;
+					}
+				}
 
 				for (int i = x * Screen_Scale; i < (x + 1) * Screen_Scale; i++) {
 					for (int j = y * Screen_Scale; j < (y + 1) * Screen_Scale; j++) {
