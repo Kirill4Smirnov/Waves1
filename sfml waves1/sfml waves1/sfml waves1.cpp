@@ -54,28 +54,37 @@ class Field {
 private:
 
 public:
-	Point* points;
+	Point** points;
 
 	Field() {
-		points = new Point[Width * Height];
+		points = new Point*[Width];
+		for (int x = 0; x < Width; x++) {
+			points[x] = new Point[Height];
+		}
+
+		
 
 		for (int x = 0; x < Width; x++) {
 			for (int y = 0; y < Height; y++) {
-				points[x * Width + y].y = 0.0;
-				points[x * Width + y].y_prev = 0.0;
+				points[x][y].y = 0.0;
+				points[x][y].y_prev = 0.0;
 			}
 		}
 
 		for (int x = 0; x < Width; x++) {
-			points[x * Width + 0].is_wall = true;
-			points[x * Width + Height-1].is_wall = true;
+			points[x][0].is_wall = true;
+			points[x][Height - 1].is_wall = true;
 		}
 		for (int y = 0; y < Height; y++) {
-			points[0 * Width + y].is_wall = true;
-			points[(Width-1) * Width + y].is_wall = true;
+			points[0][y].is_wall = true;
+			points[Width-1][y].is_wall = true;
 		}
 	}
 	~Field() {
+		for (int x = 0; x < Width; x++) {
+			delete[] points[x];
+			points[x] = nullptr;
+		}
 		delete[] points;
 	};
 
@@ -83,8 +92,8 @@ public:
 
 		for (int i = 1; i < Width - 1; i++) {
 			for (int j = 1; j < Height - 1; j++) {
-				if (!points[i * Width + j].is_wall) {
-					points[i * Width + j].Compute(points[(i - 1) * Width + (j - 1)], points[(i + 1) * Width + (j - 1)], points[(i - 1) * Width + (j + 1)], points[(i + 1) * Width + (j + 1)]);
+				if (!points[i][j].is_wall) {
+					points[i][j].Compute(points[i-1][j-1], points[i + 1][j - 1], points[i - 1][j + 1], points[i + 1][j + 1]);
 				}
 
 			}
@@ -92,8 +101,8 @@ public:
 
 		for (int i = 1; i < Width - 1; i++) {
 			for (int j = 1; j < Height - 1; j++) {
-				if (!points[i * Width + j].is_wall) {
-					points[i * Width + j].ApplyChanging();
+				if (!points[i][j].is_wall) {
+					points[i][j].ApplyChanging();
 				}
 			}
 		}
@@ -107,14 +116,14 @@ int main()
 	/*
 	for (int x = 20; x < 30; x++) {
 		for (int y = 50; y < 70; y++) {
-			field.points[x * Width + y].y = 10.0;
-			field.points[x * Width + y].y_prev = 11.0;
+			field.points[x][y].y = 10.0;
+			field.points[x][y].y_prev = 11.0;
 		}
 	}*/
 
 	for (int x = 50; x < 200; x++) {
-		field.points[x * Width + 100].is_wall = true;
-		field.points[x * Width + 50].is_wall = true;
+		field.points[x][100].is_wall = true;
+		field.points[x][50].is_wall = true;
 	}
 
 	RenderWindow window(VideoMode(Screen_Width, Screen_Height), "Wave simulation");
@@ -147,8 +156,8 @@ int main()
 					
 					for (int i = x - 3; i < x + 3; i++) {
 						for (int j = y - 3; j < y + 3; j++) {
-							if (!field.points[i * Width + j].is_wall) {
-								field.points[i * Width + j] = 3.0;
+							if (!field.points[i][j].is_wall) {
+								field.points[i][j] = 3.0;
 							}
 							
 						}
@@ -162,13 +171,13 @@ int main()
 		for (int x = 0; x < Width; x++) {
 			for (int y = 0; y < Height; y++) {
 				int color, rcolor = 0, bcolor = 0, gcolor = 0;
-				if (field.points[x * Width + y].is_wall) {
+				if (field.points[x][y].is_wall) {
 					rcolor = 255;
 					gcolor = 255;
 					bcolor = 255;
 				}
 				else {
-					color = field.points[x * Width + y].y * 100;
+					color = field.points[x][y].y * 100;
 
 					if (color > 0) {
 						if (color > 255) {
