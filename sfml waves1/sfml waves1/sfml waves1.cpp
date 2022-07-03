@@ -1,6 +1,7 @@
 ﻿#include <chrono>
 #include <thread>
 #include <SFML/Graphics.hpp>
+#include <iostream>
 
 #ifndef min
 #define max(a,b) (((a) > (b)) ? (a) : (b))
@@ -20,12 +21,13 @@ const int Screen_Height = Height * Screen_Scale;
 
 
 const double r = 0.1;//accuracy of simulation
-const double fric_coef = 0.00;
+const double fric_coef = 0.005;
 
 class Point {
 private:
 	double y_change;
 public:
+	bool is_wall = false;
 	double y;
 	double y_prev;
 
@@ -52,10 +54,26 @@ class Field {
 private:
 
 public:
-	Point *points;
+	Point* points;
 
 	Field() {
 		points = new Point[Width * Height];
+
+		for (int x = 0; x < Width; x++) {
+			for (int y = 0; y < Height; y++) {
+				points[x * Width + y].y = 0.0;
+				points[x * Width + y].y_prev = 0.0;
+			}
+		}
+
+		for (int x = 0; x < Width; x++) {
+			points[x * Width + 0].is_wall = true;
+			points[x * Width + Height-1].is_wall = true;
+		}
+		for (int y = 0; y < Height; y++) {
+			points[0 * Width + y].is_wall = true;
+			points[(Width-1) * Width + y].is_wall = true;
+		}
 	}
 	~Field() {
 		delete[] points;
@@ -65,9 +83,10 @@ public:
 
 		for (int i = 1; i < Width - 1; i++) {
 			for (int j = 1; j < Height - 1; j++) {
-				//points[i][j].Compute(points[i-1][j-1], points[i + 1][j - 1], points[i - 1][j + 1], points[i + 1][j + 1]);
-				points[i * Width + j].Compute(points[(i -1 ) * Width + (j - 1)], points[(i + 1) * Width + (j - 1)], points[(i - 1) * Width + (j + 1)], points[(i + 1) * Width + (j + 1)]);
-				
+				if (!points[i * Width + j].is_wall) {
+					points[i * Width + j].Compute(points[(i - 1) * Width + (j - 1)], points[(i + 1) * Width + (j - 1)], points[(i - 1) * Width + (j + 1)], points[(i + 1) * Width + (j + 1)]);
+				}
+
 			}
 		}
 		//points[0].Compute(points[1]);
@@ -75,6 +94,9 @@ public:
 
 		for (int i = 1; i < Width - 1; i++) {
 			for (int j = 1; j < Height - 1; j++) {
+				if (points[i * Width + j].is_wall) {
+					return;
+				}
 				//points[i][j].ApplyChanging();
 				points[i * Width + j].ApplyChanging();
 			}
@@ -86,26 +108,18 @@ int main()
 {
 	Field field;
 
-	for (int x = 0; x < Width; x++) {
-		for (int y = 0; y < Height; y++) {
-			field.points[x * Width + y].y = 0.0;
-			field.points[x * Width + y].y_prev = 0.0;
-		}
-	}
-
+	/*
 	for (int x = 20; x < 30; x++) {
 		for (int y = 50; y < 70; y++) {
 			field.points[x * Width + y].y = 10.0;
 			field.points[x * Width + y].y_prev = 11.0;
 		}
-	}
+	}*/
 
 	RenderWindow window(VideoMode(Screen_Width, Screen_Height), "Wave simulation");
 	window.setFramerateLimit(60);
 
-
 	Uint8* pixels = new Uint8[4 * Screen_Width * Screen_Width];
-
 
 	while (window.isOpen())
 	{
@@ -114,6 +128,29 @@ int main()
 		{
 			if (event.type == Event::Closed)
 				window.close();
+			//if (event.type == Event::MouseMoved) {
+			//	std::cout << "x: " << Mouse::getPosition(window).x << "\ty: " << Mouse::getPosition(window).y << '\n';
+			//}
+
+			if (Mouse::isButtonPressed(Mouse::Left))
+			{
+				int x = Mouse::getPosition(window).x;
+				int y = Mouse::getPosition(window).y;
+
+				x = x * Width / window.getSize().x;
+				y = y * Height / window.getSize().y;
+
+				std::cout << "Left mouse pressed\tx: " << x << "\ty: " << y << '\n';
+				if ((x > 3 && x < window.getSize().x - 3) && (y > 3 && y < window.getSize().y - 3)) {
+					
+					for (int i = x - 3; i < x + 3; i++) {
+						for (int j = y - 3; j < y + 3; j++) {
+							field.points[i * Width + j] = 3.0;
+						}
+					}
+					
+				}
+			}
 		}
 
 		//coloring of the screen
@@ -138,15 +175,15 @@ int main()
 					bcolor = color;
 				}
 
-				
+
 				for (int i = x * Screen_Scale; i < (x + 1) * Screen_Scale; i++) {
 					for (int j = y * Screen_Scale; j < (y + 1) * Screen_Scale; j++) {
 						int xScreen = i;
 						int yScreen = j * Screen_Scale;
 						pixels[(xScreen + yScreen * Width) * 4] = rcolor; //r
 						pixels[(xScreen + yScreen * Width) * 4 + 1] = gcolor; //g
-						pixels[(xScreen + yScreen * Width ) * 4 + 2] = bcolor; //b
-						pixels[(xScreen + yScreen * Width ) * 4 + 3] = 255; //a
+						pixels[(xScreen + yScreen * Width) * 4 + 2] = bcolor; //b
+						pixels[(xScreen + yScreen * Width) * 4 + 3] = 255; //a
 					}
 				}
 
@@ -163,7 +200,6 @@ int main()
 
 		window.display();
 
-		//sleep_for(std::chrono::microseconds((long long) Seconds_per_frame * 1000000));
 		sleep_for(std::chrono::milliseconds(10));
 		field.ComputeFrame();
 	}
@@ -171,4 +207,3 @@ int main()
 	delete[] pixels;
 	return 0;
 }
-
