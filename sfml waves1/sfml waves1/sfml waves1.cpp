@@ -156,8 +156,8 @@ int main()
 		{
 			int x = Mouse::getPosition(window).x;
 			int y = Mouse::getPosition(window).y - offset;
-			x = x / Screen_Scale;
-			y = y / Screen_Scale;
+			x = x * Width / window.getSize().x;
+			y = y * Height / (window.getSize().y - offset);
 
 			if (event.type == Event::Closed)
 				window.close();
@@ -296,8 +296,8 @@ int main()
 		if (cursor_enabled) {
 			int xMouse = Mouse::getPosition(window).x;
 			int yMouse = Mouse::getPosition(window).y - offset;
-			xMouse = xMouse / Screen_Scale;
-			yMouse = yMouse / Screen_Scale;
+			xMouse = xMouse * Width / window.getSize().x;
+			yMouse = yMouse * Height / (window.getSize().y - offset);
 
 			if ((xMouse > brush_size && xMouse < Width - brush_size) && (yMouse > brush_size && yMouse < Height - brush_size)) {
 				for (int x = (xMouse - brush_size) * Screen_Scale; x < (xMouse + brush_size) * Screen_Scale; x++) {
