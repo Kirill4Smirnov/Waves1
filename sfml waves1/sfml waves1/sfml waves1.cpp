@@ -115,17 +115,8 @@ int main()
 {
 	Field field;
 
-	/*
-	for (int x = 20; x < 30; x++) {
-		for (int y = 50; y < 70; y++) {
-			field.points[x][y].y = 10.0;
-			field.points[x][y].y_prev = 11.0;
-		}
-	}*/
-
-	for (int x = 50; x < 200; x++) {
-		field.points[x][100].is_wall = true;
-		field.points[x][50].is_wall = true;
+	for (int y = 100; y < 200; y++) {
+		field.points[150][y].is_wall = true;
 	}
 
 	const int offset = 50; //screen offset for text
@@ -146,14 +137,17 @@ int main()
 	Text text;
 	font.loadFromFile("D:\\Documents\\source\\repos\\Waves1\\arialmt.ttf"); //your path here
 	text.setFont(font);
-	
 
 	text.setCharacterSize(23); // in pixels, not points!
 	text.setFillColor(sf::Color::White);
 	text.move(10.f, 5.f);
+	std::ostringstream oss;
+
+	oss << "Brush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled;
+	outText = oss.str();
+	text.setString(outText);
 
 
-	//std::cout << "Use V + scroll to change value of brush, B + scroll to change size of brush, LMB to draw, LMB + W to graw new walls, RBM to delete walls\n";
 	while (window.isOpen())
 	{
 		Event event;
@@ -233,12 +227,9 @@ int main()
 
 				}
 
-				std::ostringstream oss;
+				oss.str(std::string());
 				oss << "Brush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled;
 				outText = oss.str();
-
-				//outText = "Brush size: " + brush_size + "\tBrush value: " + value + "\tDraw mode enabled: " + cursor_enabled;
-				//std::cout << "\rBrush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled << std::flush;
 				text.setString(outText);
 			}
 
@@ -250,11 +241,10 @@ int main()
 				else {
 					C_flag = true;
 				}
-
-				std::ostringstream oss;
+				
+				oss.str(std::string());
 				oss << "Brush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled;
 				outText = oss.str();
-				//std::cout << "\rBrush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled << std::flush;
 				text.setString(outText);
 			}
 		}
