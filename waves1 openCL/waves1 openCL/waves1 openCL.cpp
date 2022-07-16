@@ -4,6 +4,8 @@
 //#include <iostream>
 #include <string>
 #include <sstream>
+#include <CL/cl.h>
+#include <iostream>
 
 #ifndef min
 #define max(a,b) (((a) > (b)) ? (a) : (b))
@@ -24,6 +26,12 @@ const int Screen_Height = Height * Screen_Scale;
 
 const double r = 0.1;//accuracy of simulation
 const double fric_coef = 0.005;
+
+//void openCl_compute();
+
+void point_compute(double** field_y, double** field_y_prev, double** field_y_change, bool** field_is_wall, int x, int y);
+void point_apply_changing(double** field_y, double** field_y_change, int x, int y);
+void compute_frame(double** field_y, double** field_y_prev, double** field_y_change, bool** field_is_wall);
 
 class Point {
 private:
@@ -113,11 +121,46 @@ public:
 
 int main()
 {
-	Field field;
-
-	for (int y = 100; y < 200; y++) {
-		field.points[150][y].is_wall = true;
+#pragma region Create_variables
+	double** field_y = new double* [Width];
+	for (int i = 0; i < Width; i++) {
+		field_y[i] = new double[Height];
 	}
+
+	double** field_y_prev = new double* [Width];
+	for (int i = 0; i < Width; i++) {
+		field_y_prev[i] = new double[Height];
+	}
+
+	double** field_y_temp = new double* [Width];
+	for (int i = 0; i < Width; i++) {
+		field_y_temp[i] = new double[Height];
+	}
+
+	bool** field_is_wall = new bool* [Width];
+	for (int i = 0; i < Width; i++) {
+		field_is_wall[i] = new bool[Height];
+	}
+
+#pragma endregion
+
+#pragma region Init_variables
+
+	for (int x = 0; x < Width; x++) {
+		for (int y = 0; y < Height; y++) {
+			if ((x == 0 || y == 0) || ((x == Width - 1) || (y == Height - 1))) field_is_wall[x][y] = true;
+			else field_is_wall[x][y] = false;
+
+			field_y[x][y] = 0;
+			field_y_prev[x][y] = 0;
+		}
+	}
+
+	
+
+#pragma endregion
+
+	
 
 	const int offset = 50; //screen offset for text
 	RenderWindow window(VideoMode(Screen_Width, Screen_Height + offset), "Wave simulation");
@@ -147,7 +190,9 @@ int main()
 	outText = oss.str();
 	text.setString(outText);
 
+	/////////////////////////openCl_compute();
 
+#pragma region Animation
 	while (window.isOpen())
 	{
 		Event event;
@@ -172,9 +217,7 @@ int main()
 
 							for (int i = x - brush_size; i < x + brush_size; i++) {
 								for (int j = y - brush_size; j < y + brush_size; j++) {
-									if (!field.points[i][j].is_wall) {
-										field.points[i][j].is_wall = true;
-									}
+									field_is_wall[i][j] = true;
 
 								}
 							}
@@ -186,9 +229,9 @@ int main()
 
 							for (int i = x - brush_size; i < x + brush_size; i++) {
 								for (int j = y - brush_size; j < y + brush_size; j++) {
-									if (!field.points[i][j].is_wall) {
-										field.points[i][j].y = value;
-										field.points[i][j].y_prev = value;
+									if (!field_is_wall[i][j]) {
+										field_y[i][j] = value;
+										field_y_prev[i][j] = value;
 									}
 
 								}
@@ -205,7 +248,7 @@ int main()
 
 						for (int i = x - brush_size; i < x + brush_size; i++) {
 							for (int j = y - brush_size; j < y + brush_size; j++) {
-								field.points[i][j].is_wall = false;
+								field_is_wall[i][j] = false;
 							}
 						}
 
@@ -253,13 +296,13 @@ int main()
 		for (int x = 0; x < Width; x++) {
 			for (int y = 0; y < Height; y++) {
 				int color, rcolor = 0, bcolor = 0, gcolor = 0;
-				if (field.points[x][y].is_wall) {
+				if (field_is_wall[x][y]) {
 					rcolor = 255;
 					gcolor = 255;
 					bcolor = 255;
 				}
 				else {
-					color = field.points[x][y].y * 100;
+					color = field_y[x][y] * 100;
 
 					if (color > 0) {
 						if (color > 255) {
@@ -339,9 +382,165 @@ int main()
 		window.display();
 
 		//sleep_for(std::chrono::milliseconds(10));
-		field.ComputeFrame();
+		compute_frame(field_y, field_y_prev, field_y_temp, field_is_wall);
 	}
+#pragma endregion
+	
+#pragma region Deletes
 
 	delete[] pixels;
+
+	for (int i = 0; i < Width; i++) {
+		delete[] field_y[i];
+	}
+	delete[] field_y;
+
+	for (int i = 0; i < Width; i++) {
+		delete[] field_y_prev[i];
+	}
+	delete[] field_y_prev;
+
+	for (int i = 0; i < Width; i++) {
+		delete[] field_y_temp[i];
+	}
+	delete[] field_y_temp;
+
+	for (int i = 0; i < Width; i++) {
+		delete[] field_is_wall[i];
+	}
+	delete[] field_is_wall;
+#pragma endregion
+
 	return 0;
+}
+
+
+void point_compute(double** field_y, double** field_y_prev, double** field_y_change, bool** field_is_wall, int x, int y) {
+	if (field_is_wall[x][y] == false) {   
+		//field_y_change[x][y] = 2 * field_y[x][y] - field_y_prev[x][y] +   ////взаимодействие клетки с соседними "уголками"
+		//	r * (field_y[x - 1][y - 1] + field_y[x + 1][y - 1] + field_y[x - 1][y + 1] + field_y[x + 1][y + 1] - 4 * field_y[x][y]);
+
+		field_y_change[x][y] = 2 * field_y[x][y] - field_y_prev[x][y] +   ///взаимодействие клетки "квадратом"
+			r * (field_y[x][y - 1] + field_y[x][y + 1] + field_y[x - 1][y] + field_y[x + 1][y] - 4 * field_y[x][y]);
+
+		field_y_prev[x][y] = field_y[x][y];
+		field_y_change[x][y] -= (field_y_change[x][y] - field_y[x][y]) * fric_coef;
+	}
+}
+
+void point_apply_changing(double** field_y, double** field_y_change, int x, int y) {
+	field_y[x][y] = field_y_change[x][y];
+}
+
+void compute_frame(double** field_y, double** field_y_prev, double** field_y_change, bool** field_is_wall) {
+	for (int x = 0; x < Width; x++) {
+		for (int y = 0; y < Height; y++) {
+			point_compute(field_y, field_y_prev, field_y_change, field_is_wall, x, y);
+		}
+	}
+
+	for (int x = 0; x < Width; x++) {
+		for (int y = 0; y < Height; y++) {
+			point_apply_changing(field_y ,field_y_change, x, y);
+		}
+	}
+}
+
+
+
+
+void openCl_compute() {
+	cl_platform_id platform_id;
+	cl_uint ret_num_platforms, ret_num_devices;
+	cl_device_id device_id;
+	cl_int ret;
+
+
+	clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
+	clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_DEFAULT, 1, &device_id, &ret_num_devices);
+
+	/* получить доступные платформы */
+	ret = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
+
+	/* получить доступные устройства */
+	ret = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_DEFAULT, 1, &device_id, &ret_num_devices);
+
+	/* создать контекст */
+	auto context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &ret);
+
+	/* создаем команду */
+	auto command_queue = clCreateCommandQueueWithProperties(context, device_id, 0, &ret);
+
+	//std::cout << "context: " << context << "\tcommand_queue: " << command_queue << '\n';
+
+
+	cl_program program = NULL;
+	cl_kernel kernel = NULL;
+
+	FILE* fp;
+	const char fileName[] = "kernel_test.cl";
+	size_t source_size;
+	char* source_str;
+	int i;
+
+#define MAX_SOURCE_SIZE 1024
+
+	try {
+		fopen_s(&fp, fileName, "r");
+		// printf("fp is %f\n", fp);
+
+		if (!fp) {
+			fprintf(stderr, "Failed to load kernel.\n");
+			exit(1);
+		}
+		source_str = (char*)malloc(MAX_SOURCE_SIZE);
+		source_size = fread(source_str, 1, MAX_SOURCE_SIZE, fp);
+		fclose(fp);
+	}
+	catch (int a) {
+		printf("%i", a);
+	}
+
+	/* создать бинарник из кода программы */
+	program = clCreateProgramWithSource(context, 1, (const char**)&source_str, (const size_t*)&source_size, &ret);
+
+	/* скомпилировать программу */
+	ret = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
+
+	/* создать кернел */
+	kernel = clCreateKernel(program, "test", &ret);
+	delete[] source_str;
+
+	std::cout << "ret: " << ret << '\n';
+
+	cl_mem memobj = NULL;
+	int memLenth = 10;
+	cl_int* mem = (cl_int*)malloc(sizeof(cl_int) * memLenth);
+
+	/* создать буфер */
+	memobj = clCreateBuffer(context, CL_MEM_READ_WRITE, memLenth * sizeof(cl_int), NULL, &ret);
+
+	/* записать данные в буфер */
+	ret = clEnqueueWriteBuffer(command_queue, memobj, CL_TRUE, 0, memLenth * sizeof(cl_int), mem, 0, NULL, NULL);
+
+	/* устанавливаем параметр */
+	ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*)&memobj);
+
+
+
+
+	size_t global_work_size[1] = { 10 };
+
+	/* выполнить кернел */
+	ret = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, global_work_size, NULL, 0, NULL, NULL);
+
+	/* считать данные из буфера */
+	ret = clEnqueueReadBuffer(command_queue, memobj, CL_TRUE, 0, memLenth * sizeof(float), mem, 0, NULL, NULL);
+
+	for (int i = 0; i < 10; i++) {
+		std::cout << mem[i] << ' ';
+	}
+	std::cout << '\n';
+
+	delete[] mem;
 }
