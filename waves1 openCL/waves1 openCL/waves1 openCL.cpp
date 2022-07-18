@@ -24,117 +24,40 @@ const int Screen_Width = Width * Screen_Scale;
 const int Screen_Height = Height * Screen_Scale;
 
 
-const double r = 0.1;//accuracy of simulation
-const double fric_coef = 0.005;
-
-//void openCl_compute();
-
-void point_compute(double** field_y, double** field_y_prev, double** field_y_change, bool** field_is_wall, int x, int y);
-void point_apply_changing(double** field_y, double** field_y_change, int x, int y);
-void compute_frame(double** field_y, double** field_y_prev, double** field_y_change, bool** field_is_wall);
-
-class Point {
-private:
-	double y_change;
-public:
-	bool is_wall = false;
-	double y;
-	double y_prev;
-
-	Point(double y_init = 0.0) {
-		this->y = y_init;
-		this->y_prev = y_init;
-	}
-	~Point() {};
-
-	//for ordinary points with 2 neighbors
-	void Compute(const Point& point0, const Point& point1, const Point& point2, const Point& point3) {
-		this->y_change = 2 * this->y - this->y_prev + r * (point0.y + point1.y + point2.y + point3.y - 4 * this->y);
-		this->y_prev = this->y;
-		this->y_change -= (this->y_change - this->y) * fric_coef;
-	}
-
-	void ApplyChanging() {
-		this->y = this->y_change;
-		//this->y_change = 0;
-	}
-};
-
-class Field {
-private:
-
-public:
-	Point** points;
-
-	Field() {
-		points = new Point * [Width];
-		for (int x = 0; x < Width; x++) {
-			points[x] = new Point[Height];
-		}
+const float r = 0.1;//accuracy of simulation
+const float fric_coef = 0.005;
 
 
+typedef struct 
+{
+	cl_double aaa;
+	cl_int bbb;
+}point;
 
-		for (int x = 0; x < Width; x++) {
-			for (int y = 0; y < Height; y++) {
-				points[x][y].y = 0.0;
-				points[x][y].y_prev = 0.0;
-			}
-		}
 
-		for (int x = 0; x < Width; x++) {
-			points[x][0].is_wall = true;
-			points[x][Height - 1].is_wall = true;
-		}
-		for (int y = 0; y < Height; y++) {
-			points[0][y].is_wall = true;
-			points[Width - 1][y].is_wall = true;
-		}
-	}
-	~Field() {
-		for (int x = 0; x < Width; x++) {
-			delete[] points[x];
-			points[x] = nullptr;
-		}
-		delete[] points;
-	};
+void openCl_compute(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall);
 
-	void ComputeFrame() {
+void point_compute(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall, int x, int y);
+void point_apply_changing(float** field_y, float** field_y_change, int x, int y);
+void compute_frame(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall);
 
-		for (int i = 1; i < Width - 1; i++) {
-			for (int j = 1; j < Height - 1; j++) {
-				if (!points[i][j].is_wall) {
-					points[i][j].Compute(points[i - 1][j - 1], points[i + 1][j - 1], points[i - 1][j + 1], points[i + 1][j + 1]);
-				}
-
-			}
-		}
-
-		for (int i = 1; i < Width - 1; i++) {
-			for (int j = 1; j < Height - 1; j++) {
-				if (!points[i][j].is_wall) {
-					points[i][j].ApplyChanging();
-				}
-			}
-		}
-	}
-};
 
 int main()
 {
 #pragma region Create_variables
-	double** field_y = new double* [Width];
+	float** field_y = new float* [Width];
 	for (int i = 0; i < Width; i++) {
-		field_y[i] = new double[Height];
+		field_y[i] = new float[Height];
 	}
 
-	double** field_y_prev = new double* [Width];
+	float** field_y_prev = new float* [Width];
 	for (int i = 0; i < Width; i++) {
-		field_y_prev[i] = new double[Height];
+		field_y_prev[i] = new float[Height];
 	}
 
-	double** field_y_temp = new double* [Width];
+	float** field_y_temp = new float* [Width];
 	for (int i = 0; i < Width; i++) {
-		field_y_temp[i] = new double[Height];
+		field_y_temp[i] = new float[Height];
 	}
 
 	bool** field_is_wall = new bool* [Width];
@@ -170,7 +93,7 @@ int main()
 
 
 	short brush_size = 3;
-	double value = 3.0;
+	float value = 3.0;
 	bool cursor_enabled = true;
 
 	bool C_flag = false;
@@ -190,7 +113,7 @@ int main()
 	outText = oss.str();
 	text.setString(outText);
 
-	/////////////////////////openCl_compute();
+	openCl_compute(field_y, field_y_prev, field_y_temp, field_is_wall);
 
 #pragma region Animation
 	while (window.isOpen())
@@ -411,11 +334,13 @@ int main()
 	delete[] field_is_wall;
 #pragma endregion
 
+	float* ptr = (float *)field_y;
+
 	return 0;
 }
 
 
-void point_compute(double** field_y, double** field_y_prev, double** field_y_change, bool** field_is_wall, int x, int y) {
+void point_compute(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall, int x, int y) {
 	if (field_is_wall[x][y] == false) {   
 		//field_y_change[x][y] = 2 * field_y[x][y] - field_y_prev[x][y] +   ////взаимодействие клетки с соседними "уголками"
 		//	r * (field_y[x - 1][y - 1] + field_y[x + 1][y - 1] + field_y[x - 1][y + 1] + field_y[x + 1][y + 1] - 4 * field_y[x][y]);
@@ -428,11 +353,11 @@ void point_compute(double** field_y, double** field_y_prev, double** field_y_cha
 	}
 }
 
-void point_apply_changing(double** field_y, double** field_y_change, int x, int y) {
+void point_apply_changing(float** field_y, float** field_y_change, int x, int y) {
 	field_y[x][y] = field_y_change[x][y];
 }
 
-void compute_frame(double** field_y, double** field_y_prev, double** field_y_change, bool** field_is_wall) {
+void compute_frame(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall) {
 	for (int x = 0; x < Width; x++) {
 		for (int y = 0; y < Height; y++) {
 			point_compute(field_y, field_y_prev, field_y_change, field_is_wall, x, y);
@@ -449,7 +374,7 @@ void compute_frame(double** field_y, double** field_y_prev, double** field_y_cha
 
 
 
-void openCl_compute() {
+void openCl_compute(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall) {
 	cl_platform_id platform_id;
 	cl_uint ret_num_platforms, ret_num_devices;
 	cl_device_id device_id;
@@ -466,10 +391,10 @@ void openCl_compute() {
 	ret = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_DEFAULT, 1, &device_id, &ret_num_devices);
 
 	/* создать контекст */
-	auto context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &ret);
+	cl_context context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &ret);
 
 	/* создаем команду */
-	auto command_queue = clCreateCommandQueueWithProperties(context, device_id, 0, &ret);
+	cl_command_queue command_queue = clCreateCommandQueueWithProperties(context, device_id, 0, &ret);
 
 	//std::cout << "context: " << context << "\tcommand_queue: " << command_queue << '\n';
 
@@ -478,10 +403,9 @@ void openCl_compute() {
 	cl_kernel kernel = NULL;
 
 	FILE* fp;
-	const char fileName[] = "kernel_test.cl";
+	const char fileName[] = "kernel_compute_frame.cl";
 	size_t source_size;
 	char* source_str;
-	int i;
 
 #define MAX_SOURCE_SIZE 1024
 
@@ -509,38 +433,52 @@ void openCl_compute() {
 
 	/* создать кернел */
 	kernel = clCreateKernel(program, "test", &ret);
-	delete[] source_str;
-
 	std::cout << "ret: " << ret << '\n';
 
-	cl_mem memobj = NULL;
-	int memLenth = 10;
-	cl_int* mem = (cl_int*)malloc(sizeof(cl_int) * memLenth);
+	free(source_str);
+
+	cl_mem field_y_to_kernel, field_y_prev_to_kernel, field_y_change_to_kernel, field_is_wall_to_kernel, x_cell_size_kernel, y_cell_size_kernel;
+	const int x_cell_size = Width / 10;
+	const int y_cell_size = Height / 10;
 
 	/* создать буфер */
-	memobj = clCreateBuffer(context, CL_MEM_READ_WRITE, memLenth * sizeof(cl_int), NULL, &ret);
+	field_y_to_kernel = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, Width * Height * sizeof(float), NULL, &ret);
+	field_y_prev_to_kernel = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, Width * Height * sizeof(float), NULL, &ret);
+	field_y_change_to_kernel = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, Width * Height * sizeof(float), NULL, &ret);
+	field_is_wall_to_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, Width * Height * sizeof(bool), NULL, &ret);
+	x_cell_size_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(int), NULL, &ret);
+	y_cell_size_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(int), NULL, &ret);
+	
+	/* записать данные в буфер */ //должно быть Width * Height * sizeof(float) вместо sizeof(float)
+	ret = clEnqueueWriteBuffer(command_queue, field_y_to_kernel, CL_TRUE, 0, sizeof(float), field_y, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, field_y_change_to_kernel, CL_TRUE, 0, sizeof(float), field_y_change, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, field_y_prev_to_kernel, CL_TRUE, 0, sizeof(float), field_y_prev, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, field_is_wall_to_kernel, CL_TRUE, 0, sizeof(bool), field_is_wall, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, x_cell_size_kernel, CL_TRUE, 0, sizeof(int), &x_cell_size, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, y_cell_size_kernel, CL_TRUE, 0, sizeof(int), &y_cell_size, 0, NULL, NULL);
 
-	/* записать данные в буфер */
-	ret = clEnqueueWriteBuffer(command_queue, memobj, CL_TRUE, 0, memLenth * sizeof(cl_int), mem, 0, NULL, NULL);
 
 	/* устанавливаем параметр */
-	ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*)&memobj);
+	ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*)&field_y_to_kernel);
+	ret = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void*)&field_y_prev_to_kernel);
+	ret = clSetKernelArg(kernel, 2, sizeof(cl_mem), (void*)&field_y_change_to_kernel);
+	ret = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void*)&field_is_wall_to_kernel);
+	ret = clSetKernelArg(kernel, 4, sizeof(cl_mem), (void*)&x_cell_size_kernel);
+	ret = clSetKernelArg(kernel, 5, sizeof(cl_mem), (void*)&y_cell_size_kernel);
 
 
-
-
-	size_t global_work_size[1] = { 10 };
+	size_t global_work_size[2] = { 10, 10 };
 
 	/* выполнить кернел */
-	ret = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, global_work_size, NULL, 0, NULL, NULL);
+	ret = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL); ///////////////
 
 	/* считать данные из буфера */
-	ret = clEnqueueReadBuffer(command_queue, memobj, CL_TRUE, 0, memLenth * sizeof(float), mem, 0, NULL, NULL);
+	//ret = clEnqueueReadBuffer(command_queue, output, CL_TRUE, 0, memLenth * sizeof(int), matA, 0, NULL, NULL);
 
-	for (int i = 0; i < 10; i++) {
-		std::cout << mem[i] << ' ';
-	}
-	std::cout << '\n';
+	ret = clEnqueueReadBuffer(command_queue, field_y_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
+	ret = clEnqueueReadBuffer(command_queue, field_y_prev_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
+	ret = clEnqueueReadBuffer(command_queue, field_y_change_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
+	ret = clEnqueueReadBuffer(command_queue, field_is_wall_to_kernel, CL_TRUE, 0, Width * Height * sizeof(bool), field_is_wall, 0, NULL, NULL);
 
-	delete[] mem;
+
 }
