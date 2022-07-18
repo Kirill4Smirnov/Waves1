@@ -28,42 +28,24 @@ const float r = 0.1;//accuracy of simulation
 const float fric_coef = 0.005;
 
 
-typedef struct 
-{
-	cl_double aaa;
-	cl_int bbb;
-}point;
 
+void openCl_compute(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall);
 
-void openCl_compute(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall);
-
-void point_compute(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall, int x, int y);
-void point_apply_changing(float** field_y, float** field_y_change, int x, int y);
-void compute_frame(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall);
+void point_compute(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall, int x, int y);
+void point_apply_changing(float* field_y, float* field_y_change, int x, int y);
+void compute_frame(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall);
 
 
 int main()
 {
 #pragma region Create_variables
-	float** field_y = new float* [Width];
-	for (int i = 0; i < Width; i++) {
-		field_y[i] = new float[Height];
-	}
+	float* field_y = new float [Width * Height];
 
-	float** field_y_prev = new float* [Width];
-	for (int i = 0; i < Width; i++) {
-		field_y_prev[i] = new float[Height];
-	}
+	float* field_y_prev = new float[Width * Height];
 
-	float** field_y_temp = new float* [Width];
-	for (int i = 0; i < Width; i++) {
-		field_y_temp[i] = new float[Height];
-	}
+	float* field_y_change = new float[Width * Height];
 
-	bool** field_is_wall = new bool* [Width];
-	for (int i = 0; i < Width; i++) {
-		field_is_wall[i] = new bool[Height];
-	}
+	bool* field_is_wall = new bool[Width * Height];
 
 #pragma endregion
 
@@ -71,11 +53,11 @@ int main()
 
 	for (int x = 0; x < Width; x++) {
 		for (int y = 0; y < Height; y++) {
-			if ((x == 0 || y == 0) || ((x == Width - 1) || (y == Height - 1))) field_is_wall[x][y] = true;
-			else field_is_wall[x][y] = false;
+			if ((x == 0 || y == 0) || ((x == Width - 1) || (y == Height - 1))) field_is_wall[x + Width * y] = true;
+			else field_is_wall[x + Width * y] = false;
 
-			field_y[x][y] = 0;
-			field_y_prev[x][y] = 0;
+			field_y[x + Width * y] = 0;
+			field_y_prev[x + Width * y] = 0;
 		}
 	}
 
@@ -83,7 +65,6 @@ int main()
 
 #pragma endregion
 
-	
 
 	const int offset = 50; //screen offset for text
 	RenderWindow window(VideoMode(Screen_Width, Screen_Height + offset), "Wave simulation");
@@ -113,7 +94,7 @@ int main()
 	outText = oss.str();
 	text.setString(outText);
 
-	openCl_compute(field_y, field_y_prev, field_y_temp, field_is_wall);
+	openCl_compute(field_y, field_y_prev, field_y_change, field_is_wall);
 
 #pragma region Animation
 	while (window.isOpen())
@@ -140,7 +121,7 @@ int main()
 
 							for (int i = x - brush_size; i < x + brush_size; i++) {
 								for (int j = y - brush_size; j < y + brush_size; j++) {
-									field_is_wall[i][j] = true;
+									field_is_wall[i + j * Width] = true;
 
 								}
 							}
@@ -152,9 +133,9 @@ int main()
 
 							for (int i = x - brush_size; i < x + brush_size; i++) {
 								for (int j = y - brush_size; j < y + brush_size; j++) {
-									if (!field_is_wall[i][j]) {
-										field_y[i][j] = value;
-										field_y_prev[i][j] = value;
+									if (!field_is_wall[i + j * Width]) {
+										field_y[i + j * Width] = value;
+										field_y_prev[i + j * Width] = value;
 									}
 
 								}
@@ -171,7 +152,7 @@ int main()
 
 						for (int i = x - brush_size; i < x + brush_size; i++) {
 							for (int j = y - brush_size; j < y + brush_size; j++) {
-								field_is_wall[i][j] = false;
+								field_is_wall[i + j * Width] = false;
 							}
 						}
 
@@ -219,13 +200,13 @@ int main()
 		for (int x = 0; x < Width; x++) {
 			for (int y = 0; y < Height; y++) {
 				int color, rcolor = 0, bcolor = 0, gcolor = 0;
-				if (field_is_wall[x][y]) {
+				if (field_is_wall[x + Width * y]) {
 					rcolor = 255;
 					gcolor = 255;
 					bcolor = 255;
 				}
 				else {
-					color = field_y[x][y] * 100;
+					color = field_y[x + Width * y] * 100;
 
 					if (color > 0) {
 						if (color > 255) {
@@ -305,7 +286,7 @@ int main()
 		window.display();
 
 		//sleep_for(std::chrono::milliseconds(10));
-		compute_frame(field_y, field_y_prev, field_y_temp, field_is_wall);
+		compute_frame(field_y, field_y_prev, field_y_change, field_is_wall);
 	}
 #pragma endregion
 	
@@ -313,51 +294,34 @@ int main()
 
 	delete[] pixels;
 
-	for (int i = 0; i < Width; i++) {
-		delete[] field_y[i];
-	}
 	delete[] field_y;
-
-	for (int i = 0; i < Width; i++) {
-		delete[] field_y_prev[i];
-	}
 	delete[] field_y_prev;
-
-	for (int i = 0; i < Width; i++) {
-		delete[] field_y_temp[i];
-	}
-	delete[] field_y_temp;
-
-	for (int i = 0; i < Width; i++) {
-		delete[] field_is_wall[i];
-	}
+	delete[] field_y_change;
 	delete[] field_is_wall;
 #pragma endregion
-
-	float* ptr = (float *)field_y;
 
 	return 0;
 }
 
 
-void point_compute(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall, int x, int y) {
-	if (field_is_wall[x][y] == false) {   
-		//field_y_change[x][y] = 2 * field_y[x][y] - field_y_prev[x][y] +   ////взаимодействие клетки с соседними "уголками"
-		//	r * (field_y[x - 1][y - 1] + field_y[x + 1][y - 1] + field_y[x - 1][y + 1] + field_y[x + 1][y + 1] - 4 * field_y[x][y]);
+void point_compute(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall, int x, int y) {
+	if (field_is_wall[x + Width * y] == false) {   
+		//field_y_change[x + Width * y] = 2 * field_y[x + Width * y] - field_y_prev[x + Width * y] +   ////взаимодействие клетки с соседними "уголками"
+		//	r * (field_y[x - 1][y - 1] + field_y[x + 1][y - 1] + field_y[x - 1][y + 1] + field_y[x + 1][y + 1] - 4 * field_y[x + Width * y]);
 
-		field_y_change[x][y] = 2 * field_y[x][y] - field_y_prev[x][y] +   ///взаимодействие клетки "квадратом"
-			r * (field_y[x][y - 1] + field_y[x][y + 1] + field_y[x - 1][y] + field_y[x + 1][y] - 4 * field_y[x][y]);
+		field_y_change[x + Width * y] = 2 * field_y[x + Width * y] - field_y_prev[x + Width * y] +   ///взаимодействие клетки "квадратом"
+			r * (field_y[(x) + Width * (y - 1)] + field_y[(x)+Width * (y + 1)] + field_y[(x - 1)+Width * (y)] + field_y[(x + 1) + Width * (y)] - 4 * field_y[(x) + Width * (y)]);
 
-		field_y_prev[x][y] = field_y[x][y];
-		field_y_change[x][y] -= (field_y_change[x][y] - field_y[x][y]) * fric_coef;
+		field_y_prev[x + Width * y] = field_y[x + Width * y];
+		field_y_change[x + Width * y] -= (field_y_change[x + Width * y] - field_y[x + Width * y]) * fric_coef;
 	}
 }
 
-void point_apply_changing(float** field_y, float** field_y_change, int x, int y) {
-	field_y[x][y] = field_y_change[x][y];
+void point_apply_changing(float* field_y, float* field_y_change, int x, int y) {
+	field_y[x + Width * y] = field_y_change[x + Width * y];
 }
 
-void compute_frame(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall) {
+void compute_frame(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall) {
 	for (int x = 0; x < Width; x++) {
 		for (int y = 0; y < Height; y++) {
 			point_compute(field_y, field_y_prev, field_y_change, field_is_wall, x, y);
@@ -374,7 +338,7 @@ void compute_frame(float** field_y, float** field_y_prev, float** field_y_change
 
 
 
-void openCl_compute(float** field_y, float** field_y_prev, float** field_y_change, bool** field_is_wall) {
+void openCl_compute(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall) {
 	cl_platform_id platform_id;
 	cl_uint ret_num_platforms, ret_num_devices;
 	cl_device_id device_id;
@@ -384,16 +348,12 @@ void openCl_compute(float** field_y, float** field_y_prev, float** field_y_chang
 	clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
 	clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_DEFAULT, 1, &device_id, &ret_num_devices);
 
-	/* получить доступные платформы */
 	ret = clGetPlatformIDs(1, &platform_id, &ret_num_platforms);
 
-	/* получить доступные устройства */
 	ret = clGetDeviceIDs(platform_id, CL_DEVICE_TYPE_DEFAULT, 1, &device_id, &ret_num_devices);
 
-	/* создать контекст */
 	cl_context context = clCreateContext(NULL, 1, &device_id, NULL, NULL, &ret);
 
-	/* создаем команду */
 	cl_command_queue command_queue = clCreateCommandQueueWithProperties(context, device_id, 0, &ret);
 
 	//std::cout << "context: " << context << "\tcommand_queue: " << command_queue << '\n';
@@ -425,38 +385,39 @@ void openCl_compute(float** field_y, float** field_y_prev, float** field_y_chang
 		printf("%i", a);
 	}
 
-	/* создать бинарник из кода программы */
 	program = clCreateProgramWithSource(context, 1, (const char**)&source_str, (const size_t*)&source_size, &ret);
 
-	/* скомпилировать программу */
 	ret = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
 
-	/* создать кернел */
-	kernel = clCreateKernel(program, "test", &ret);
+	kernel = clCreateKernel(program, "compute", &ret);
 	std::cout << "ret: " << ret << '\n';
 
 	free(source_str);
 
-	cl_mem field_y_to_kernel, field_y_prev_to_kernel, field_y_change_to_kernel, field_is_wall_to_kernel, x_cell_size_kernel, y_cell_size_kernel;
-	const int x_cell_size = Width / 10;
-	const int y_cell_size = Height / 10;
+	cl_mem field_y_to_kernel, field_y_prev_to_kernel, field_y_change_to_kernel, field_is_wall_to_kernel;
+	cl_mem x_cell_size_kernel, y_cell_size_kernel, r_kernel, fric_kernel;
+	const cl_int x_cell_size = Width / 10;
+	const cl_int y_cell_size = Height / 10;
 
 	/* создать буфер */
-	field_y_to_kernel = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, Width * Height * sizeof(float), NULL, &ret);
-	field_y_prev_to_kernel = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, Width * Height * sizeof(float), NULL, &ret);
-	field_y_change_to_kernel = clCreateBuffer(context, CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, Width * Height * sizeof(float), NULL, &ret);
-	field_is_wall_to_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, Width * Height * sizeof(bool), NULL, &ret);
-	x_cell_size_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(int), NULL, &ret);
-	y_cell_size_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, sizeof(int), NULL, &ret);
+	field_y_to_kernel = clCreateBuffer(context, CL_MEM_READ_WRITE, Width * Height * sizeof(float), NULL, &ret);
+	field_y_prev_to_kernel = clCreateBuffer(context, CL_MEM_READ_WRITE, Width * Height * sizeof(float), NULL, &ret);
+	field_y_change_to_kernel = clCreateBuffer(context, CL_MEM_READ_WRITE, Width * Height * sizeof(float), NULL, &ret);
+	field_is_wall_to_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY, Width * Height * sizeof(bool), NULL, &ret);
+	x_cell_size_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(cl_int), NULL, &ret);
+	y_cell_size_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(cl_int), NULL, &ret);
+	r_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float), NULL, &ret);
+	fric_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float), NULL, &ret);
 	
 	/* записать данные в буфер */ //должно быть Width * Height * sizeof(float) вместо sizeof(float)
-	ret = clEnqueueWriteBuffer(command_queue, field_y_to_kernel, CL_TRUE, 0, sizeof(float), field_y, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, field_y_change_to_kernel, CL_TRUE, 0, sizeof(float), field_y_change, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, field_y_prev_to_kernel, CL_TRUE, 0, sizeof(float), field_y_prev, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, field_is_wall_to_kernel, CL_TRUE, 0, sizeof(bool), field_is_wall, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, x_cell_size_kernel, CL_TRUE, 0, sizeof(int), &x_cell_size, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, y_cell_size_kernel, CL_TRUE, 0, sizeof(int), &y_cell_size, 0, NULL, NULL);
-
+	ret = clEnqueueWriteBuffer(command_queue, field_y_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, field_y_change_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, field_y_prev_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, field_is_wall_to_kernel, CL_TRUE, 0, Width * Height * sizeof(bool), field_is_wall, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, x_cell_size_kernel, CL_TRUE, 0, sizeof(cl_int), &x_cell_size, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, y_cell_size_kernel, CL_TRUE, 0, sizeof(cl_int), &y_cell_size, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, r_kernel, CL_TRUE, 0, sizeof(float), &r, 0, NULL, NULL);
+	ret = clEnqueueWriteBuffer(command_queue, fric_kernel, CL_TRUE, 0, sizeof(float), &fric_coef, 0, NULL, NULL);
 
 	/* устанавливаем параметр */
 	ret = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void*)&field_y_to_kernel);
@@ -465,6 +426,8 @@ void openCl_compute(float** field_y, float** field_y_prev, float** field_y_chang
 	ret = clSetKernelArg(kernel, 3, sizeof(cl_mem), (void*)&field_is_wall_to_kernel);
 	ret = clSetKernelArg(kernel, 4, sizeof(cl_mem), (void*)&x_cell_size_kernel);
 	ret = clSetKernelArg(kernel, 5, sizeof(cl_mem), (void*)&y_cell_size_kernel);
+	ret = clSetKernelArg(kernel, 6, sizeof(cl_mem), (void*)&r_kernel);
+	ret = clSetKernelArg(kernel, 7, sizeof(cl_mem), (void*)&fric_kernel);
 
 
 	size_t global_work_size[2] = { 10, 10 };
@@ -473,7 +436,6 @@ void openCl_compute(float** field_y, float** field_y_prev, float** field_y_chang
 	ret = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_work_size, NULL, 0, NULL, NULL); ///////////////
 
 	/* считать данные из буфера */
-	//ret = clEnqueueReadBuffer(command_queue, output, CL_TRUE, 0, memLenth * sizeof(int), matA, 0, NULL, NULL);
 
 	ret = clEnqueueReadBuffer(command_queue, field_y_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
 	ret = clEnqueueReadBuffer(command_queue, field_y_prev_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
