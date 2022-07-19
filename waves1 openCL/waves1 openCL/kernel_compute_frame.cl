@@ -26,11 +26,12 @@ __kernel void compute(__global float* field_y, __global float* field_y_prev, __g
 				field_y_prev[x + Width * y] = field_y[x + Width * y];
 				field_y_change[x + Width * y] -= (field_y_change[x + Width * y] - field_y[x + Width * y]) * fric;
 
-				if (field_y[x + Width * y] > 50 || field_y[x + Width * y] < -50 || isnan(field_y[x + Width * y])) {
-					field_y_change[x + Width * y] = 0;
-					field_y[x + Width * y] = 0;
-					field_y_prev[x + Width * y] = 0;
-				}
+				
+			}
+			if (field_y[x + Width * y] > 50 || field_y[x + Width * y] < -50 || isnan(field_y[x + Width * y])) {
+				field_y_change[x + Width * y] = 0;
+				field_y[x + Width * y] = 0;
+				field_y_prev[x + Width * y] = 0;
 			}
 
 		}

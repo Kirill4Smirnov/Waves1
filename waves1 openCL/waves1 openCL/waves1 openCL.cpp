@@ -14,7 +14,7 @@ using std::this_thread::sleep_for;
 //const int Width = 500;
 //const int Height = 500;
 
-const int divider = 100; //Width and Height must be divisible by divider
+const int divider = 10; //Width and Height must be divisible by divider
 
 const cl_int x_cell_size = Width / divider;
 const cl_int y_cell_size = Height / divider;
@@ -95,7 +95,7 @@ int main()
 
 		if (!fp) {
 			fprintf(stderr, "Failed to load kernel.\n");
-			exit(1);
+			return(-1);
 		}
 		source_str = (char*)malloc(MAX_SOURCE_SIZE);
 		source_size = fread(source_str, 1, MAX_SOURCE_SIZE, fp);
