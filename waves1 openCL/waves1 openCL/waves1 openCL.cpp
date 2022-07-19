@@ -1,31 +1,34 @@
 ﻿#include <chrono>
 #include <thread>
 #include <SFML/Graphics.hpp>
-//#include <iostream>
 #include <string>
 #include <sstream>
 #include <CL/cl.h>
 #include <iostream>
 #include <map>
 
+
+
 #ifndef min
 #define max(a,b) (((a) > (b)) ? (a) : (b))
 #define min(a,b) (((a) < (b)) ? (a) : (b))
 #endif // min
 
+#define MAX_SOURCE_SIZE 10000 ///source is the device code in kernel_compute_frame.cl file
+#define DEBUG
 
 using namespace sf;
 using std::this_thread::sleep_for;
 
-const int Width = 300;
-const int Height = 300;
+const int Width = 500;
+const int Height = 500;
 
-const int divider = 15; //Width and Height must be divisible by divider
+const int divider = 100; //Width and Height must be divisible by divider
 
 const cl_int x_cell_size = Width / divider;
 const cl_int y_cell_size = Height / divider;
 
-const int Screen_Scale = 2;
+const int Screen_Scale = 1;
 const int Screen_Width = Width * Screen_Scale;
 const int Screen_Height = Height * Screen_Scale;
 
@@ -34,23 +37,9 @@ const float r = 0.1;//accuracy of simulation
 const float fric_coef = 0.005;
 
 
+void openCl_compute(float*& field_y, float*& field_y_prev, float*& field_y_change, bool*& field_is_wall, cl_uchar*& pixels,
+	std::map<int, cl_mem>& buffers, cl_kernel& kernel_compute, cl_kernel& kernel_apply, cl_kernel& kernel_draw, cl_command_queue& command_queue);
 
-void openCl_compute(float*& field_y, float*& field_y_prev, float*& field_y_change, bool*& field_is_wall,
-	std::map<int, cl_mem>& buffers, cl_kernel& kernel_compute, cl_kernel& kernel_apply, cl_command_queue& command_queue);
-
-void point_compute(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall, int x, int y);
-void point_apply_changing(float* field_y, float* field_y_change, int x, int y);
-void compute_frame(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall);
-
-void frame_apply_changing(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall) {
-	for (int x = 0; x < Width; x++) {
-		for (int y = 0; y < Height; y++) {
-			if (field_is_wall[x + Width * y] == false) {
-				field_y[x + Width * y] = field_y_change[x + Width * y];
-			}
-		}
-	}
-}
 
 int main()
 {
@@ -81,7 +70,6 @@ int main()
 
 #pragma endregion
 
-
 #pragma region Kernel
 	cl_platform_id platform_id;
 	cl_uint ret_num_platforms, ret_num_devices;
@@ -102,14 +90,14 @@ int main()
 
 
 	cl_program program = NULL;
-	cl_kernel kernel_compute = NULL, kernel_apply = NULL;
+	cl_kernel kernel_compute = NULL, kernel_apply = NULL, kernel_draw = NULL;
 
 	FILE* fp;
 	const char fileName[] = "kernel_compute_frame.cl";
 	size_t source_size;
 	char* source_str;
 
-#define MAX_SOURCE_SIZE 10000
+
 
 	try {
 		fopen_s(&fp, fileName, "r");
@@ -130,15 +118,16 @@ int main()
 	program = clCreateProgramWithSource(context, 1, (const char**)&source_str, (const size_t*)&source_size, &ret);
 	ret = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
 
+
 	kernel_compute = clCreateKernel(program, "compute", &ret);
-	std::cout << "ret: " << ret << '\n';
 	kernel_apply = clCreateKernel(program, "apply", &ret);
-	std::cout << "ret: " << ret << '\n';
+	kernel_draw = clCreateKernel(program, "draw", &ret);
+
 
 	free(source_str);
 
 	cl_mem field_y_to_kernel, field_y_prev_to_kernel, field_y_change_to_kernel, field_is_wall_to_kernel;
-	cl_mem x_cell_size_kernel, y_cell_size_kernel, r_kernel, fric_kernel;
+	cl_mem x_cell_size_kernel, y_cell_size_kernel, r_kernel, fric_kernel, pixels_kernel;
 
 	size_t global_work_size[2] = { divider, divider };
 
@@ -150,6 +139,8 @@ int main()
 	y_cell_size_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(cl_int), NULL, &ret);
 	r_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float), NULL, &ret);
 	fric_kernel = clCreateBuffer(context, CL_MEM_READ_ONLY, sizeof(float), NULL, &ret);
+	pixels_kernel = clCreateBuffer(context, CL_MEM_READ_WRITE, 4 * Screen_Width * Screen_Width * sizeof(cl_uchar), NULL, &ret);
+
 
 	std::map<int, cl_mem> buffers = {
 		{0, field_y_to_kernel},
@@ -159,47 +150,19 @@ int main()
 		{4, x_cell_size_kernel},
 		{5, y_cell_size_kernel},
 		{6, r_kernel},
-		{7, fric_kernel}
+		{7, fric_kernel},
+		{8, pixels_kernel}
 	};
 
-	/*
-	ret = clEnqueueWriteBuffer(command_queue, field_y_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, field_y_change_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, field_y_prev_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, field_is_wall_to_kernel, CL_TRUE, 0, Width * Height * sizeof(bool), field_is_wall, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, x_cell_size_kernel, CL_TRUE, 0, sizeof(cl_int), &x_cell_size, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, y_cell_size_kernel, CL_TRUE, 0, sizeof(cl_int), &y_cell_size, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, r_kernel, CL_TRUE, 0, sizeof(float), &r, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, fric_kernel, CL_TRUE, 0, sizeof(float), &fric_coef, 0, NULL, NULL);
-
-
-	ret = clSetKernelArg(kernel_compute, 0, sizeof(cl_mem), (void*)&field_y_to_kernel);
-	ret = clSetKernelArg(kernel_compute, 1, sizeof(cl_mem), (void*)&field_y_prev_to_kernel);
-	ret = clSetKernelArg(kernel_compute, 2, sizeof(cl_mem), (void*)&field_y_change_to_kernel);
-	ret = clSetKernelArg(kernel_compute, 3, sizeof(cl_mem), (void*)&field_is_wall_to_kernel);
-	ret = clSetKernelArg(kernel_compute, 4, sizeof(cl_mem), (void*)&x_cell_size_kernel);
-	ret = clSetKernelArg(kernel_compute, 5, sizeof(cl_mem), (void*)&y_cell_size_kernel);
-	ret = clSetKernelArg(kernel_compute, 6, sizeof(cl_mem), (void*)&r_kernel);
-	ret = clSetKernelArg(kernel_compute, 7, sizeof(cl_mem), (void*)&fric_kernel);
-
-
-	ret = clEnqueueNDRangeKernel(command_queue, kernel_compute, 2, NULL, global_work_size, NULL, 0, NULL, NULL); ///////////////
-
-
-	ret = clEnqueueReadBuffer(command_queue, field_y_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
-	ret = clEnqueueReadBuffer(command_queue, field_y_prev_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
-	ret = clEnqueueReadBuffer(command_queue, field_y_change_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
-	ret = clEnqueueReadBuffer(command_queue, field_is_wall_to_kernel, CL_TRUE, 0, Width * Height * sizeof(bool), field_is_wall, 0, NULL, NULL);
-	*/
 #pragma endregion
 
-
+#pragma region Init_window
 	const int offset = 50; //screen offset for text
 	RenderWindow window(VideoMode(Screen_Width, Screen_Height + offset), "Wave simulation");
 	window.setFramerateLimit(60);
 
-	Uint8* pixels = new Uint8[4 * Screen_Width * Screen_Width];
-
+//	Uint8* pixels = new Uint8[4 * Screen_Width * Screen_Width]; ////Uint8 and cl_uchar are the same uchar, but cl_uchar is better to pass into a kernel
+	cl_uchar* pixels = new cl_uchar[4 * Screen_Width * Screen_Width];
 
 	short brush_size = 3;
 	float value = 3.0;
@@ -207,10 +170,10 @@ int main()
 
 	bool C_flag = false;
 	std::string outText = "";
-
+	
 	Font font;
 	Text text;
-	font.loadFromFile("D:\\Documents\\source\\repos\\Waves1\\arialmt.ttf"); //your path here
+	font.loadFromFile("..\\..\\arialmt.ttf");  //your path here
 	text.setFont(font);
 
 	text.setCharacterSize(23); // in pixels, not points!
@@ -222,9 +185,15 @@ int main()
 	outText = oss.str();
 	text.setString(outText);
 
-	//openCl_compute(field_y, field_y_prev, field_y_change, field_is_wall);
+#pragma endregion
 
 #pragma region Animation
+	sf::Clock clock; // starts the clock
+	
+	
+	float fps = 0.0;
+	int frame_counter = 0;
+	//std::cout << '\n';
 	while (window.isOpen())
 	{
 		Event event;
@@ -236,15 +205,15 @@ int main()
 			x = x * Width / window.getSize().x;
 			y = y * Height / (window.getSize().y - offset);
 
+
 			if (event.type == Event::Closed)
 				window.close();
 
 			if (cursor_enabled) {
 				if (Mouse::isButtonPressed(Mouse::Left))
 				{
-
-
-					if (Keyboard::isKeyPressed(Keyboard::W)) { //if W pressed, add wall
+					//if W pressed, add wall
+					if (Keyboard::isKeyPressed(Keyboard::W)) { 
 						if ((x > brush_size && x < Width - brush_size) && (y > brush_size && y < Height - brush_size)) {
 
 							for (int i = x - brush_size; i < x + brush_size; i++) {
@@ -274,7 +243,8 @@ int main()
 
 				}
 
-				if (Mouse::isButtonPressed(Mouse::Right)) //delete several walls
+				//delete several walls
+				if (Mouse::isButtonPressed(Mouse::Right)) 
 				{
 					if ((x > brush_size && x < Width - brush_size) && (y > brush_size && y < Height - brush_size)) {
 
@@ -322,20 +292,32 @@ int main()
 				outText = oss.str();
 				text.setString(outText);
 			}
-		}
 
+#ifdef DEBUG
+			///debug
+			if (Keyboard::isKeyPressed(Keyboard::D)) {
+				if((0 <= x && x < Width) && (0 <= y && y < Height)) std::cout << "x: " << x << "\ty: " << y << "\tvalue: " << field_y[x + y * Width] << '\n';
+			}
+#endif
+		}
+		//compute frame and color the screen
+		openCl_compute(field_y, field_y_prev, field_y_change, field_is_wall, pixels, buffers, kernel_compute, kernel_apply, kernel_draw, command_queue);
+
+		//sf::Time elapsed2 = clock.getElapsedTime();
 		//coloring of the screen
+		/*
 		for (int x = 0; x < Width; x++) {
 			for (int y = 0; y < Height; y++) {
 				int color, rcolor = 0, bcolor = 0, gcolor = 0;
+				float value = field_y[x + Width * y];
 				if (field_is_wall[x + Width * y]) {
 					rcolor = 255;
 					gcolor = 255;
 					bcolor = 255;
 				}
 				else {
-					color = field_y[x + Width * y] * 100;
-
+					color = value * 100;
+					
 					if (color > 0) {
 						if (color > 255) {
 							gcolor = color - 255;
@@ -353,6 +335,12 @@ int main()
 					}
 				}
 
+				if (isnan(value)){
+					gcolor = 250;
+					bcolor = 0;
+					rcolor = 0;
+				}
+
 				for (int i = x * Screen_Scale; i < (x + 1) * Screen_Scale; i++) {
 					for (int j = y * Screen_Scale; j < (y + 1) * Screen_Scale; j++) {
 						int xScreen = i;
@@ -366,7 +354,8 @@ int main()
 
 			}
 		}
-
+		*/
+		//sf::Time elapsed3 = clock.getElapsedTime();
 		//brush cursor
 		if (cursor_enabled) {
 			int xMouse = Mouse::getPosition(window).x;
@@ -412,45 +401,20 @@ int main()
 		window.draw(sprite);
 
 		window.display();
-
-
-		/*
 		
-		ret = clEnqueueWriteBuffer(command_queue, field_y_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
-		ret = clEnqueueWriteBuffer(command_queue, field_y_change_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
-		ret = clEnqueueWriteBuffer(command_queue, field_y_prev_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
-		ret = clEnqueueWriteBuffer(command_queue, field_is_wall_to_kernel, CL_TRUE, 0, Width * Height * sizeof(bool), field_is_wall, 0, NULL, NULL);
-		ret = clEnqueueWriteBuffer(command_queue, x_cell_size_kernel, CL_TRUE, 0, sizeof(cl_int), &x_cell_size, 0, NULL, NULL);
-		ret = clEnqueueWriteBuffer(command_queue, y_cell_size_kernel, CL_TRUE, 0, sizeof(cl_int), &y_cell_size, 0, NULL, NULL);
-		ret = clEnqueueWriteBuffer(command_queue, r_kernel, CL_TRUE, 0, sizeof(float), &r, 0, NULL, NULL);
-		ret = clEnqueueWriteBuffer(command_queue, fric_kernel, CL_TRUE, 0, sizeof(float), &fric_coef, 0, NULL, NULL);
 
-
-		ret = clSetKernelArg(kernel_compute, 0, sizeof(cl_mem), (void*)&field_y_to_kernel);
-		ret = clSetKernelArg(kernel_compute, 1, sizeof(cl_mem), (void*)&field_y_prev_to_kernel);
-		ret = clSetKernelArg(kernel_compute, 2, sizeof(cl_mem), (void*)&field_y_change_to_kernel);
-		ret = clSetKernelArg(kernel_compute, 3, sizeof(cl_mem), (void*)&field_is_wall_to_kernel);
-		ret = clSetKernelArg(kernel_compute, 4, sizeof(cl_mem), (void*)&x_cell_size_kernel);
-		ret = clSetKernelArg(kernel_compute, 5, sizeof(cl_mem), (void*)&y_cell_size_kernel);
-		ret = clSetKernelArg(kernel_compute, 6, sizeof(cl_mem), (void*)&r_kernel);
-		ret = clSetKernelArg(kernel_compute, 7, sizeof(cl_mem), (void*)&fric_kernel);
-
-
-		ret = clEnqueueNDRangeKernel(command_queue, kernel_compute, 2, NULL, global_work_size, NULL, 0, NULL, NULL); ///////////////
-
-
-		ret = clEnqueueReadBuffer(command_queue, field_y_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
-		ret = clEnqueueReadBuffer(command_queue, field_y_prev_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
-		ret = clEnqueueReadBuffer(command_queue, field_y_change_to_kernel, CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
-		ret = clEnqueueReadBuffer(command_queue, field_is_wall_to_kernel, CL_TRUE, 0, Width * Height * sizeof(bool), field_is_wall, 0, NULL, NULL);
-		*/
-
-		openCl_compute(field_y, field_y_prev, field_y_change, field_is_wall, buffers, kernel_compute, kernel_apply, command_queue);
-
-
+		
 		//sleep_for(std::chrono::milliseconds(10));
-		//compute_frame(field_y, field_y_prev, field_y_change, field_is_wall);
-		//frame_apply_changing(field_y, field_y_prev, field_y_change, field_is_wall);
+		frame_counter++;
+
+		if (frame_counter > 30) {
+			sf::Time elapsed4 = clock.getElapsedTime();
+			fps = frame_counter * 1000.0 / elapsed4.asMilliseconds();
+			clock.restart();
+			std::cout << fps << '\r' << std::flush;
+			frame_counter = 0;
+		}
+		
 	}
 #pragma endregion
 	
@@ -468,89 +432,81 @@ int main()
 }
 
 
-void point_compute(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall, int x, int y) {
-	if (field_is_wall[x + Width * y] == false) {   
-		//field_y_change[x + Width * y] = 2 * field_y[x + Width * y] - field_y_prev[x + Width * y] +   ////взаимодействие клетки с соседними "уголками"
-		//	r * (field_y[x - 1][y - 1] + field_y[x + 1][y - 1] + field_y[x - 1][y + 1] + field_y[x + 1][y + 1] - 4 * field_y[x + Width * y]);
-
-		field_y_change[x + Width * y] = 2 * field_y[x + Width * y] - field_y_prev[x + Width * y] +   ///взаимодействие клетки "квадратом"
-			r * (field_y[(x) + Width * (y - 1)] + field_y[(x)+Width * (y + 1)] + field_y[(x - 1)+Width * (y)] + field_y[(x + 1) + Width * (y)] - 4 * field_y[(x) + Width * (y)]);
-
-		field_y_prev[x + Width * y] = field_y[x + Width * y];
-		field_y_change[x + Width * y] -= (field_y_change[x + Width * y] - field_y[x + Width * y]) * fric_coef;
-	}
-}
-
-void point_apply_changing(float* field_y, float* field_y_change, int x, int y) {
-	field_y[x + Width * y] = field_y_change[x + Width * y];
-}
-
-void compute_frame(float* field_y, float* field_y_prev, float* field_y_change, bool* field_is_wall) {
-	for (int x = 0; x < Width; x++) {
-		for (int y = 0; y < Height; y++) {
-			point_compute(field_y, field_y_prev, field_y_change, field_is_wall, x, y);
-		}
-	}
-
-	for (int x = 0; x < Width; x++) {
-		for (int y = 0; y < Height; y++) {
-			point_apply_changing(field_y ,field_y_change, x, y);
-		}
-	}
-}
-
-void openCl_compute(float* &field_y, float* &field_y_prev, float* &field_y_change, bool* &field_is_wall,
-	std::map<int, cl_mem>& buffers, cl_kernel &kernel_compute, cl_kernel &kernel_apply, cl_command_queue &command_queue) {
-	cl_int ret;
+void openCl_compute(float* &field_y, float* &field_y_prev, float* &field_y_change, bool* &field_is_wall, cl_uchar* &pixels,
+	std::map<int, cl_mem>& buffers, cl_kernel &kernel_compute, cl_kernel &kernel_apply, cl_kernel& kernel_draw, cl_command_queue &command_queue) {
+	cl_int retn;
 	size_t global_work_size[2] = { divider, divider };
 
 #pragma region Compute_changings
 
-	ret = clEnqueueWriteBuffer(command_queue, buffers[0], CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, buffers[1], CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, buffers[2], CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, buffers[3], CL_TRUE, 0, Width * Height * sizeof(bool), field_is_wall, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, buffers[4], CL_TRUE, 0, sizeof(cl_int), &x_cell_size, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, buffers[5], CL_TRUE, 0, sizeof(cl_int), &y_cell_size, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, buffers[6], CL_TRUE, 0, sizeof(float), &r, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, buffers[7], CL_TRUE, 0, sizeof(float), &fric_coef, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[0], CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[1], CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[2], CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[3], CL_TRUE, 0, Width * Height * sizeof(bool), field_is_wall, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[4], CL_TRUE, 0, sizeof(cl_int), &x_cell_size, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[5], CL_TRUE, 0, sizeof(cl_int), &y_cell_size, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[6], CL_TRUE, 0, sizeof(float), &r, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[7], CL_TRUE, 0, sizeof(float), &fric_coef, 0, NULL, NULL);
 
-	ret = clSetKernelArg(kernel_compute, 0, sizeof(cl_mem), (void*)&buffers[0]);
-	ret = clSetKernelArg(kernel_compute, 1, sizeof(cl_mem), (void*)&buffers[1]);
-	ret = clSetKernelArg(kernel_compute, 2, sizeof(cl_mem), (void*)&buffers[2]);
-	ret = clSetKernelArg(kernel_compute, 3, sizeof(cl_mem), (void*)&buffers[3]);
-	ret = clSetKernelArg(kernel_compute, 4, sizeof(cl_mem), (void*)&buffers[4]);
-	ret = clSetKernelArg(kernel_compute, 5, sizeof(cl_mem), (void*)&buffers[5]);
-	ret = clSetKernelArg(kernel_compute, 6, sizeof(cl_mem), (void*)&buffers[6]);
-	ret = clSetKernelArg(kernel_compute, 7, sizeof(cl_mem), (void*)&buffers[7]);
-
-
-	ret = clEnqueueNDRangeKernel(command_queue, kernel_compute, 2, NULL, global_work_size, NULL, 0, NULL, NULL); ///////////////
+	retn = clSetKernelArg(kernel_compute, 0, sizeof(cl_mem), (void*)&buffers[0]);
+	retn = clSetKernelArg(kernel_compute, 1, sizeof(cl_mem), (void*)&buffers[1]);
+	retn = clSetKernelArg(kernel_compute, 2, sizeof(cl_mem), (void*)&buffers[2]);
+	retn = clSetKernelArg(kernel_compute, 3, sizeof(cl_mem), (void*)&buffers[3]);
+	retn = clSetKernelArg(kernel_compute, 4, sizeof(cl_mem), (void*)&buffers[4]);
+	retn = clSetKernelArg(kernel_compute, 5, sizeof(cl_mem), (void*)&buffers[5]);
+	retn = clSetKernelArg(kernel_compute, 6, sizeof(cl_mem), (void*)&buffers[6]);
+	retn = clSetKernelArg(kernel_compute, 7, sizeof(cl_mem), (void*)&buffers[7]);
 
 
-	ret = clEnqueueReadBuffer(command_queue, buffers[0], CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
-	ret = clEnqueueReadBuffer(command_queue, buffers[1], CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
-	ret = clEnqueueReadBuffer(command_queue, buffers[2], CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
-	ret = clEnqueueReadBuffer(command_queue, buffers[3], CL_TRUE, 0, Width * Height * sizeof(bool), field_is_wall, 0, NULL, NULL);
+	retn = clEnqueueNDRangeKernel(command_queue, kernel_compute, 2, NULL, global_work_size, NULL, 0, NULL, NULL); ///////////////
+
+
+	retn = clEnqueueReadBuffer(command_queue, buffers[0], CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
+	retn = clEnqueueReadBuffer(command_queue, buffers[1], CL_TRUE, 0, Width * Height * sizeof(float), field_y_prev, 0, NULL, NULL);
+	retn = clEnqueueReadBuffer(command_queue, buffers[2], CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
+	retn = clEnqueueReadBuffer(command_queue, buffers[3], CL_TRUE, 0, Width * Height * sizeof(bool), field_is_wall, 0, NULL, NULL);
 #pragma endregion
 
 #pragma region Apply_changings
 
-	ret = clEnqueueWriteBuffer(command_queue, buffers[0], CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, buffers[2], CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, buffers[4], CL_TRUE, 0, sizeof(int), &x_cell_size, 0, NULL, NULL);
-	ret = clEnqueueWriteBuffer(command_queue, buffers[5], CL_TRUE, 0, sizeof(int), &y_cell_size, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[0], CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[2], CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[4], CL_TRUE, 0, sizeof(int), &x_cell_size, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[5], CL_TRUE, 0, sizeof(int), &y_cell_size, 0, NULL, NULL);
 
-	ret = clSetKernelArg(kernel_apply, 0, sizeof(cl_mem), (void*)&buffers[0]);
-	ret = clSetKernelArg(kernel_apply, 1, sizeof(cl_mem), (void*)&buffers[2]);
-	ret = clSetKernelArg(kernel_apply, 2, sizeof(cl_mem), (void*)&buffers[4]);
-	ret = clSetKernelArg(kernel_apply, 3, sizeof(cl_mem), (void*)&buffers[5]);
+	retn = clSetKernelArg(kernel_apply, 0, sizeof(cl_mem), (void*)&buffers[0]);
+	retn = clSetKernelArg(kernel_apply, 1, sizeof(cl_mem), (void*)&buffers[2]);
+	retn = clSetKernelArg(kernel_apply, 2, sizeof(cl_mem), (void*)&buffers[4]);
+	retn = clSetKernelArg(kernel_apply, 3, sizeof(cl_mem), (void*)&buffers[5]);
 
-	ret = clEnqueueNDRangeKernel(command_queue, kernel_apply, 2, NULL, global_work_size, NULL, 0, NULL, NULL); ///////////////
+	retn = clEnqueueNDRangeKernel(command_queue, kernel_apply, 2, NULL, global_work_size, NULL, 0, NULL, NULL); ///////////////
 
 
-	ret = clEnqueueReadBuffer(command_queue, buffers[0], CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
-	ret = clEnqueueReadBuffer(command_queue, buffers[2], CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
+	retn = clEnqueueReadBuffer(command_queue, buffers[0], CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
+	//retn = clEnqueueReadBuffer(command_queue, buffers[2], CL_TRUE, 0, Width * Height * sizeof(float), field_y_change, 0, NULL, NULL);
+
+#pragma endregion
+
+#pragma region Draw_window
+
+	retn = clEnqueueWriteBuffer(command_queue, buffers[8], CL_TRUE, 0, 4 * Screen_Width * Screen_Width * sizeof(cl_uchar), pixels, 0, NULL, NULL);
+	//retn = clEnqueueWriteBuffer(command_queue, buffers[0], CL_TRUE, 0, Width * Height * sizeof(float), field_y, 0, NULL, NULL);
+	//retn = clEnqueueWriteBuffer(command_queue, buffers[3], CL_TRUE, 0, Width * Height * sizeof(float), field_is_wall, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[4], CL_TRUE, 0, sizeof(int), &x_cell_size, 0, NULL, NULL);
+	retn = clEnqueueWriteBuffer(command_queue, buffers[5], CL_TRUE, 0, sizeof(int), &y_cell_size, 0, NULL, NULL);
+
+	retn = clSetKernelArg(kernel_draw, 0, sizeof(cl_mem), (void*)&buffers[0]);
+	retn = clSetKernelArg(kernel_draw, 1, sizeof(cl_mem), (void*)&buffers[3]);
+	retn = clSetKernelArg(kernel_draw, 2, sizeof(cl_mem), (void*)&buffers[8]); /////
+	retn = clSetKernelArg(kernel_draw, 3, sizeof(cl_mem), (void*)&buffers[4]);
+	retn = clSetKernelArg(kernel_draw, 4, sizeof(cl_mem), (void*)&buffers[5]);
+
+	retn = clEnqueueNDRangeKernel(command_queue, kernel_draw, 2, NULL, global_work_size, NULL, 0, NULL, NULL); ///////////////
+	//std::cout << "retn: " << retn << '\n';
+	
+
+	retn = clEnqueueReadBuffer(command_queue, buffers[8], CL_TRUE, 0, 4 * Screen_Width * Screen_Width * sizeof(cl_uchar), pixels, 0, NULL, NULL);
+
 
 #pragma endregion
 
