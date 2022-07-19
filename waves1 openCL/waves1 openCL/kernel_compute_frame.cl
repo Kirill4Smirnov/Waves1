@@ -1,8 +1,10 @@
-#define Width 500
-#define Height 500
-#define Screen_Scale 1
-#define Screen_Width 500 //Width * Screen_Scale
-#define Screen_Height 500 //Height * Screen_Scale
+
+#define Width 200
+#define Height 200
+#define Screen_Scale 3
+#define Screen_Width (Width * Screen_Scale)
+#define Screen_Height (Height * Screen_Scale)
+
 
 __kernel void compute(__global float* field_y, __global float* field_y_prev, __global float* field_y_change,
 	__global bool* field_is_wall, __global int* x_cell_size, __global int* y_cell_size, __global float* r_raw, __global float* fric_raw)

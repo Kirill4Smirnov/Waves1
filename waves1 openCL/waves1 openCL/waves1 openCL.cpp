@@ -1,36 +1,27 @@
-﻿#include <chrono>
+﻿#include "Header.h"
+#include <chrono>
 #include <thread>
-#include <SFML/Graphics.hpp>
-#include <string>
-#include <sstream>
-#include <CL/cl.h>
+
 #include <iostream>
 #include <map>
 
 
-
-#ifndef min
-#define max(a,b) (((a) > (b)) ? (a) : (b))
-#define min(a,b) (((a) < (b)) ? (a) : (b))
-#endif // min
-
-#define MAX_SOURCE_SIZE 10000 ///source is the device code in kernel_compute_frame.cl file
 #define DEBUG
 
 using namespace sf;
 using std::this_thread::sleep_for;
 
-const int Width = 500;
-const int Height = 500;
+//const int Width = 500;
+//const int Height = 500;
 
 const int divider = 100; //Width and Height must be divisible by divider
 
 const cl_int x_cell_size = Width / divider;
 const cl_int y_cell_size = Height / divider;
 
-const int Screen_Scale = 1;
-const int Screen_Width = Width * Screen_Scale;
-const int Screen_Height = Height * Screen_Scale;
+//const int Screen_Scale = 1;
+//const int Screen_Width = Width * Screen_Scale;
+//const int Screen_Height = Height * Screen_Scale;
 
 
 const float r = 0.1;//accuracy of simulation
@@ -93,14 +84,13 @@ int main()
 	cl_kernel kernel_compute = NULL, kernel_apply = NULL, kernel_draw = NULL;
 
 	FILE* fp;
-	const char fileName[] = "kernel_compute_frame.cl";
+	//const char fileNameDefines[] = "Defines.h";
+	const char fileNameKernel[] = "kernel_compute_frame.cl";
 	size_t source_size;
 	char* source_str;
 
-
-
 	try {
-		fopen_s(&fp, fileName, "r");
+		fopen_s(&fp, fileNameKernel, "r");
 		// printf("fp is %f\n", fp);
 
 		if (!fp) {
@@ -117,9 +107,10 @@ int main()
 
 	program = clCreateProgramWithSource(context, 1, (const char**)&source_str, (const size_t*)&source_size, &ret);
 	ret = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
-
+	//std::cout << "ret: " << ret << '\n';
 
 	kernel_compute = clCreateKernel(program, "compute", &ret);
+	//std::cout << "ret: " << ret << '\n';
 	kernel_apply = clCreateKernel(program, "apply", &ret);
 	kernel_draw = clCreateKernel(program, "draw", &ret);
 
@@ -303,60 +294,6 @@ int main()
 		//compute frame and color the screen
 		openCl_compute(field_y, field_y_prev, field_y_change, field_is_wall, pixels, buffers, kernel_compute, kernel_apply, kernel_draw, command_queue);
 
-		//sf::Time elapsed2 = clock.getElapsedTime();
-		//coloring of the screen
-		/*
-		for (int x = 0; x < Width; x++) {
-			for (int y = 0; y < Height; y++) {
-				int color, rcolor = 0, bcolor = 0, gcolor = 0;
-				float value = field_y[x + Width * y];
-				if (field_is_wall[x + Width * y]) {
-					rcolor = 255;
-					gcolor = 255;
-					bcolor = 255;
-				}
-				else {
-					color = value * 100;
-					
-					if (color > 0) {
-						if (color > 255) {
-							gcolor = color - 255;
-							color = 255;
-						}
-						rcolor = color;
-					}
-					if (color <= 0) {
-						color = -color;
-						if (color > 255) {
-							gcolor = color - 255;
-							color = 255;
-						}
-						bcolor = color;
-					}
-				}
-
-				if (isnan(value)){
-					gcolor = 250;
-					bcolor = 0;
-					rcolor = 0;
-				}
-
-				for (int i = x * Screen_Scale; i < (x + 1) * Screen_Scale; i++) {
-					for (int j = y * Screen_Scale; j < (y + 1) * Screen_Scale; j++) {
-						int xScreen = i;
-						int yScreen = j * Screen_Scale;
-						pixels[(xScreen + yScreen * Width) * 4] = rcolor; //r
-						pixels[(xScreen + yScreen * Width) * 4 + 1] = gcolor; //g
-						pixels[(xScreen + yScreen * Width) * 4 + 2] = bcolor; //b
-						pixels[(xScreen + yScreen * Width) * 4 + 3] = 255; //a
-					}
-				}
-
-			}
-		}
-		*/
-		//sf::Time elapsed3 = clock.getElapsedTime();
-		//brush cursor
 		if (cursor_enabled) {
 			int xMouse = Mouse::getPosition(window).x;
 			int yMouse = Mouse::getPosition(window).y - offset;
@@ -411,7 +348,7 @@ int main()
 			sf::Time elapsed4 = clock.getElapsedTime();
 			fps = frame_counter * 1000.0 / elapsed4.asMilliseconds();
 			clock.restart();
-			std::cout << fps << '\r' << std::flush;
+			std::cout << "fps: " << fps << '\r' << std::flush;
 			frame_counter = 0;
 		}
 		
