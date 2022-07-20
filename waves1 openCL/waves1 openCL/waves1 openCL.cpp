@@ -1,12 +1,11 @@
 ﻿#include "Header.h"
 #include <chrono>
 #include <thread>
-
 #include <iostream>
 #include <map>
 
 
-#define DEBUG
+//#define DEBUG
 
 using namespace sf;
 using std::this_thread::sleep_for;
@@ -14,7 +13,7 @@ using std::this_thread::sleep_for;
 //const int Width = 500;
 //const int Height = 500;
 
-const int divider = 10; //Width and Height must be divisible by divider
+const int divider = 100; //Width and Height must be divisible by divider
 
 const cl_int x_cell_size = Width / divider;
 const cl_int y_cell_size = Height / divider;
@@ -23,8 +22,10 @@ const cl_int y_cell_size = Height / divider;
 //const int Screen_Width = Width * Screen_Scale;
 //const int Screen_Height = Height * Screen_Scale;
 
+const float target_sps = 50.0; //sps is steps of simulation per second
 
-const float r = 0.1;//accuracy of simulation
+const float r_raw = 0.1;//target accuracy of simulation
+float r = r_raw;
 const float fric_coef = 0.005;
 
 
@@ -84,28 +85,57 @@ int main()
 	cl_kernel kernel_compute = NULL, kernel_apply = NULL, kernel_draw = NULL;
 
 	FILE* fp;
-	//const char fileNameDefines[] = "Defines.h";
+	const char fileNameDefines[] = "Defines.h";
 	const char fileNameKernel[] = "kernel_compute_frame.cl";
-	size_t source_size;
-	char* source_str;
+	size_t source_size_kernel;
+	char* source_str_kernel;
+	size_t defines_size_kernel;
+	char* defines_str_kernel;
+
 
 	try {
-		fopen_s(&fp, fileNameKernel, "r");
-		// printf("fp is %f\n", fp);
+		fopen_s(&fp, fileNameDefines, "r");
 
 		if (!fp) {
-			fprintf(stderr, "Failed to load kernel.\n");
+			fprintf(stderr, "Failed to load defines.\n");
 			return(-1);
 		}
-		source_str = (char*)malloc(MAX_SOURCE_SIZE);
-		source_size = fread(source_str, 1, MAX_SOURCE_SIZE, fp);
+		defines_str_kernel = (char*)malloc(MAX_SOURCE_SIZE);
+		defines_size_kernel = fread(defines_str_kernel, 1, MAX_SOURCE_SIZE, fp);
 		fclose(fp);
 	}
 	catch (int a) {
 		printf("%i", a);
 	}
 
-	program = clCreateProgramWithSource(context, 1, (const char**)&source_str, (const size_t*)&source_size, &ret);
+	try {
+		fopen_s(&fp, fileNameKernel, "r");
+
+		if (!fp) {
+			fprintf(stderr, "Failed to load kernel.\n");
+			return(-1);
+		}
+		source_str_kernel = (char*)malloc(MAX_SOURCE_SIZE);
+		source_size_kernel = fread(source_str_kernel, 1, MAX_SOURCE_SIZE, fp);
+		fclose(fp);
+	}
+	catch (int a) {
+		printf("%i", a);
+	}
+
+	char* final_source_str = (char*)malloc(MAX_SOURCE_SIZE);;
+	size_t final_source_size = source_size_kernel + defines_size_kernel;
+
+	//join defines to source_str
+	for (int i = 0; i < defines_size_kernel; i++) {
+		final_source_str[i] = defines_str_kernel[i];
+	}
+	for (int i = defines_size_kernel; i < final_source_size; i++) {
+		final_source_str[i] = source_str_kernel[i - defines_size_kernel];
+	}
+
+	//build kernel program with included defines
+	program = clCreateProgramWithSource(context, 1, (const char**)&final_source_str, (const size_t*)&final_source_size, &ret);
 	ret = clBuildProgram(program, 1, &device_id, NULL, NULL, NULL);
 	//std::cout << "ret: " << ret << '\n';
 
@@ -115,7 +145,9 @@ int main()
 	kernel_draw = clCreateKernel(program, "draw", &ret);
 
 
-	free(source_str);
+	free(source_str_kernel);
+	free(defines_str_kernel);
+	free(final_source_str);
 
 	cl_mem field_y_to_kernel, field_y_prev_to_kernel, field_y_change_to_kernel, field_is_wall_to_kernel;
 	cl_mem x_cell_size_kernel, y_cell_size_kernel, r_kernel, fric_kernel, pixels_kernel;
@@ -182,7 +214,7 @@ int main()
 	sf::Clock clock; // starts the clock
 	
 	
-	float fps = 0.0;
+	float fps = target_sps;
 	int frame_counter = 0;
 	//std::cout << '\n';
 	while (window.isOpen())
@@ -294,6 +326,56 @@ int main()
 		//compute frame and color the screen
 		openCl_compute(field_y, field_y_prev, field_y_change, field_is_wall, pixels, buffers, kernel_compute, kernel_apply, kernel_draw, command_queue);
 
+
+		for (int x = 0; x < Width; x++) {
+			for (int y = 0; y < Height; y++) {
+
+				int color, rcolor = 0, bcolor = 0, gcolor = 0;
+				float value = field_y[x + Width * y];
+				if (field_is_wall[x + Width * y]) {
+					rcolor = 255;
+					gcolor = 255;
+					bcolor = 255;
+				}
+				else {
+					color = value * 100;
+
+					if (color > 0) {
+						if (color > 255) {
+							gcolor = color - 255;
+							color = 255;
+						}
+						rcolor = color;
+					}
+					if (color <= 0) {
+						color = -color;
+						if (color > 255) {
+							gcolor = color - 255;
+							color = 255;
+						}
+						bcolor = color;
+					}
+				}
+
+				if (isnan(value)) {
+					gcolor = 250;
+					bcolor = 0;
+					rcolor = 0;
+				}
+
+				for (int i = x * Screen_Scale; i < (x + 1) * Screen_Scale; i++) {
+					for (int j = y * Screen_Scale; j < (y + 1) * Screen_Scale; j++) {
+						int xScreen = i;
+						int yScreen = j * Screen_Scale;
+						pixels[(xScreen + yScreen * Width) * 4] = rcolor; //r
+						pixels[(xScreen + yScreen * Width) * 4 + 1] = gcolor; //g
+						pixels[(xScreen + yScreen * Width) * 4 + 2] = bcolor; //b
+						pixels[(xScreen + yScreen * Width) * 4 + 3] = 255; //a
+					}
+				}
+			}
+		}
+
 		if (cursor_enabled) {
 			int xMouse = Mouse::getPosition(window).x;
 			int yMouse = Mouse::getPosition(window).y - offset;
@@ -344,7 +426,7 @@ int main()
 		//sleep_for(std::chrono::milliseconds(10));
 		frame_counter++;
 
-		if (frame_counter > 30) {
+		if (frame_counter > 10) {
 			sf::Time elapsed4 = clock.getElapsedTime();
 			fps = frame_counter * 1000.0 / elapsed4.asMilliseconds();
 			clock.restart();
@@ -352,6 +434,7 @@ int main()
 			frame_counter = 0;
 		}
 		
+		r = r_raw * target_sps / fps;
 	}
 #pragma endregion
 	
@@ -424,6 +507,7 @@ void openCl_compute(float* &field_y, float* &field_y_prev, float* &field_y_chang
 
 #pragma endregion
 
+	/*
 #pragma region Draw_window
 
 	retn = clEnqueueWriteBuffer(command_queue, buffers[8], CL_TRUE, 0, 4 * Screen_Width * Screen_Width * sizeof(cl_uchar), pixels, 0, NULL, NULL);
@@ -444,8 +528,8 @@ void openCl_compute(float* &field_y, float* &field_y_prev, float* &field_y_chang
 
 	retn = clEnqueueReadBuffer(command_queue, buffers[8], CL_TRUE, 0, 4 * Screen_Width * Screen_Width * sizeof(cl_uchar), pixels, 0, NULL, NULL);
 
-
+	
 #pragma endregion
-
+*/
 }
 
