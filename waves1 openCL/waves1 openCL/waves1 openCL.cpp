@@ -200,7 +200,7 @@ int main()
 	font.loadFromFile("..\\..\\arialmt.ttf");  //your path here
 	text.setFont(font);
 
-	text.setCharacterSize(17); // in pixels, not points!
+	text.setCharacterSize(Screen_Width / 40); // in pixels, not points!
 	text.setFillColor(sf::Color::White);
 	text.move(10.f, 5.f);
 	std::ostringstream oss;
@@ -412,15 +412,20 @@ int main()
 		if (frame_counter > 10) {
 			sf::Time elapsed4 = clock.getElapsedTime();
 			fps = frame_counter * 1000.0 / elapsed4.asMilliseconds();
+
+			if (elapsed4.asMilliseconds() < 100.0 * frame_counter) {
+				r = r_raw * target_sps / fps;
+				fric_coef = target_fric_coef * target_sps / fps;
+			}
+
 			clock.restart();
 			std::cout << "fps: " << fps << '\r' << std::flush;
 			frame_counter = 0;
 
 			//adaptive simulation speed
-			r = r_raw * target_sps / fps;
-			fric_coef = target_fric_coef * target_sps / fps;
 
-			if (r > 0.5) r = r_raw; //simulation failsafe
+
+			//if (r > 0.5) r = r_raw; //simulation failsafe
 		}
 		
 	}
