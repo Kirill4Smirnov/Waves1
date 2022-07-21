@@ -22,11 +22,12 @@ const cl_int y_cell_size = Height / divider;
 //const int Screen_Width = Width * Screen_Scale;
 //const int Screen_Height = Height * Screen_Scale;
 
-const float target_sps = 50.0; //sps is steps of simulation per second
+float target_sps = 50.0; //sps is steps of simulation per second
 
 const float r_raw = 0.1;//target accuracy of simulation
 float r = r_raw;
-const float fric_coef = 0.005;
+const float target_fric_coef = 0.005;
+float fric_coef = 0.005;
 
 
 void openCl_compute(float*& field_y, float*& field_y_prev, float*& field_y_change, bool*& field_is_wall, cl_uchar*& pixels,
@@ -182,7 +183,7 @@ int main()
 #pragma region Init_window
 	const int offset = 50; //screen offset for text
 	RenderWindow window(VideoMode(Screen_Width, Screen_Height + offset), "Wave simulation");
-	window.setFramerateLimit(60);
+	window.setFramerateLimit(100);
 
 //	Uint8* pixels = new Uint8[4 * Screen_Width * Screen_Width]; ////Uint8 and cl_uchar are the same uchar, but cl_uchar is better to pass into a kernel
 	cl_uchar* pixels = new cl_uchar[4 * Screen_Width * Screen_Width];
@@ -199,12 +200,12 @@ int main()
 	font.loadFromFile("..\\..\\arialmt.ttf");  //your path here
 	text.setFont(font);
 
-	text.setCharacterSize(23); // in pixels, not points!
+	text.setCharacterSize(17); // in pixels, not points!
 	text.setFillColor(sf::Color::White);
 	text.move(10.f, 5.f);
 	std::ostringstream oss;
 
-	oss << "Brush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled;
+	oss << "Brush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled << "\tTarget speed: " << target_sps;
 	outText = oss.str();
 	text.setString(outText);
 
@@ -224,7 +225,7 @@ int main()
 		while (window.pollEvent(event))
 		{
 			int x = Mouse::getPosition(window).x;
-			int y = Mouse::getPosition(window).y - offset;
+			int y = Mouse::getPosition(window).y - offset * window.getSize().y / (Screen_Height + offset);
 			x = x * Width / window.getSize().x;
 			y = y * Height / (window.getSize().y - offset);
 
@@ -249,19 +250,19 @@ int main()
 						}
 					}
 					else {//else set y of pixels to value
-						if ((x > brush_size && x < Width - brush_size) && (y > brush_size && y < Height - brush_size)) {
+						//if ((x >= brush_size && x <= Width - brush_size) && (y >= brush_size && y <= Height - brush_size)) {
 
 							for (int i = x - brush_size; i < x + brush_size; i++) {
 								for (int j = y - brush_size; j < y + brush_size; j++) {
-									if (!field_is_wall[i + j * Width]) {
+									if ((0 <= i && i < Width) && (0 <= j && j < Height)) { //check if the point is out of the field
 										field_y[i + j * Width] = value;
 										field_y_prev[i + j * Width] = value;
+										field_y_change[i + j * Width] = value;
 									}
-
 								}
 							}
 
-						}
+						//}
 					}
 
 				}
@@ -294,9 +295,16 @@ int main()
 					value += event.mouseWheel.delta * 0.1;
 
 				}
+				if (Keyboard::isKeyPressed(Keyboard::S)) {
+					target_sps += event.mouseWheel.delta * 3.f;
+					if (target_sps < 10.) {
+						target_sps = 10.;
+					}
+				}
+
 
 				oss.str(std::string());
-				oss << "Brush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled;
+				oss << "Brush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled << "\tTarget speed: " << target_sps;
 				outText = oss.str();
 				text.setString(outText);
 			}
@@ -311,10 +319,34 @@ int main()
 				}
 
 				oss.str(std::string());
-				oss << "Brush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled;
+				oss << "Brush size: " << brush_size << "\tBrush value: " << value << "\tDraw mode enabled: " << cursor_enabled << "\tTarget speed: " << target_sps;
 				outText = oss.str();
 				text.setString(outText);
 			}
+
+			//clear the whole screen
+			if (Keyboard::isKeyPressed(Keyboard::Delete)) {
+				if (Keyboard::isKeyPressed(Keyboard::W)) { //if W pressed, delete walls
+					for (int x = 0; x < Width; x++) {
+						for (int y = 0; y < Height; y++) {
+							field_y[x + y * Width] = 0.0;
+							field_y_prev[x + y * Width] = 0.0;
+							field_y_change[x + y * Width] = 0.0;
+							if((x != 0 && x != Width - 1) && (y != 0 && y != Height - 1)) field_is_wall[x + y * Width] = false; //check if the wall isn't a border one
+						}
+					}
+				}
+				else {
+					for (int x = 0; x < Width; x++) {
+						for (int y = 0; y < Height; y++) {
+							field_y[x + y * Width] = 0.0;
+							field_y_prev[x + y * Width] = 0.0;
+							field_y_change[x + y * Width] = 0.0;
+						}
+					}
+				}
+			}
+
 
 #ifdef DEBUG
 			///debug
@@ -326,59 +358,10 @@ int main()
 		//compute frame and color the screen
 		openCl_compute(field_y, field_y_prev, field_y_change, field_is_wall, pixels, buffers, kernel_compute, kernel_apply, kernel_draw, command_queue);
 
-
-		for (int x = 0; x < Width; x++) {
-			for (int y = 0; y < Height; y++) {
-
-				int color, rcolor = 0, bcolor = 0, gcolor = 0;
-				float value = field_y[x + Width * y];
-				if (field_is_wall[x + Width * y]) {
-					rcolor = 255;
-					gcolor = 255;
-					bcolor = 255;
-				}
-				else {
-					color = value * 100;
-
-					if (color > 0) {
-						if (color > 255) {
-							gcolor = color - 255;
-							color = 255;
-						}
-						rcolor = color;
-					}
-					if (color <= 0) {
-						color = -color;
-						if (color > 255) {
-							gcolor = color - 255;
-							color = 255;
-						}
-						bcolor = color;
-					}
-				}
-
-				if (isnan(value)) {
-					gcolor = 250;
-					bcolor = 0;
-					rcolor = 0;
-				}
-
-				for (int i = x * Screen_Scale; i < (x + 1) * Screen_Scale; i++) {
-					for (int j = y * Screen_Scale; j < (y + 1) * Screen_Scale; j++) {
-						int xScreen = i;
-						int yScreen = j * Screen_Scale;
-						pixels[(xScreen + yScreen * Width) * 4] = rcolor; //r
-						pixels[(xScreen + yScreen * Width) * 4 + 1] = gcolor; //g
-						pixels[(xScreen + yScreen * Width) * 4 + 2] = bcolor; //b
-						pixels[(xScreen + yScreen * Width) * 4 + 3] = 255; //a
-					}
-				}
-			}
-		}
-
+		//color cursor
 		if (cursor_enabled) {
 			int xMouse = Mouse::getPosition(window).x;
-			int yMouse = Mouse::getPosition(window).y - offset;
+			int yMouse = Mouse::getPosition(window).y - offset * window.getSize().y / (Screen_Height + offset);
 			xMouse = xMouse * Width / window.getSize().x;
 			yMouse = yMouse * Height / (window.getSize().y - offset);
 
@@ -432,9 +415,14 @@ int main()
 			clock.restart();
 			std::cout << "fps: " << fps << '\r' << std::flush;
 			frame_counter = 0;
+
+			//adaptive simulation speed
+			r = r_raw * target_sps / fps;
+			fric_coef = target_fric_coef * target_sps / fps;
+
+			if (r > 0.5) r = r_raw; //simulation failsafe
 		}
 		
-		r = r_raw * target_sps / fps;
 	}
 #pragma endregion
 	
@@ -507,7 +495,6 @@ void openCl_compute(float* &field_y, float* &field_y_prev, float* &field_y_chang
 
 #pragma endregion
 
-	/*
 #pragma region Draw_window
 
 	retn = clEnqueueWriteBuffer(command_queue, buffers[8], CL_TRUE, 0, 4 * Screen_Width * Screen_Width * sizeof(cl_uchar), pixels, 0, NULL, NULL);
@@ -530,6 +517,6 @@ void openCl_compute(float* &field_y, float* &field_y_prev, float* &field_y_chang
 
 	
 #pragma endregion
-*/
+
 }
 
